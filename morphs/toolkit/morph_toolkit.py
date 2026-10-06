@@ -577,6 +577,207 @@ def outline_at(bvh, center_xy, z, grow=0.012, n=64):
     return pts
 
 
+# ------------------------------------------------------------------ bands, cuts, patches (from Harley)
+def side_dir(a_deg):
+    """Horizontal unit vector at angle a (0 = RIGHT, 90 = FRONT)."""
+    a = math.radians(a_deg)
+    return RIGHT * math.cos(a) + FRONT * math.sin(a)
+
+
+def angle_of(co, center):
+    d = co - Vector((center[0], center[1], co.z))
+    return math.degrees(math.atan2(d.dot(FRONT), d.dot(RIGHT))) % 360
+
+
+def ring_points(bvhs, center, z, lift, nseg=72, z_fn=None):
+    """Closed ring of points on the outermost of several surfaces, at height z
+    or z_fn(angle). Misses are skipped. Last point repeats the first."""
+    pts = []
+    for i in range(nseg + 1):
+        a = 360.0 * i / nseg
+        r = side_dir(a); zz = z_fn(a) if z_fn else z
+        hit = outer_hit(bvhs, Vector((center[0], center[1], zz)) + r * 5, -r)
+        if hit is not None:
+            pts.append(hit[0] + hit[1] * lift)
+    return pts
+
+
+def ring_band(name, bvhs, center, z, h, lift, thick, mat, nseg=64, z_fn=None, rows=1):
+    """Band (strap, cuff, choker, stripe) hugging the outermost surface. rows>1
+    adds intermediate rows so wide bands follow curvature (thin stripes: 6)."""
+    bm = bmesh.new(); grid = []
+    for r_ in range(rows + 1):
+        dz = -h / 2 + h * r_ / rows
+        row = []
+        for i in range(nseg):
+            a = 360.0 * i / nseg
+            d = side_dir(a); zz = (z_fn(a) if z_fn else z) + dz
+            hit = outer_hit(bvhs, Vector((center[0], center[1], zz)) + d * 5, -d)
+            row.append(bm.verts.new(hit[0] + hit[1] * lift))
+        grid.append(row)
+    for r_ in range(rows):
+        for i in range(nseg):
+            a0, a1 = grid[r_], grid[r_ + 1]
+            bm.faces.new((a0[i], a0[(i + 1) % nseg], a1[(i + 1) % nseg], a1[i]))
+    ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=1.0); smooth(ob)
+    return ob
+
+
+def stitch_ring(name, bvhs, center, z, lift, mat, nseg=200, dash=0.55, z_fn=None):
+    """Dashed stitch line round a body at height z (or z_fn(angle))."""
+    pts = ring_points(bvhs, center, z, lift, nseg=nseg, z_fn=z_fn)
+    bm = bmesh.new()
+    for i in range(0, len(pts) - 1, 2):
+        a_, b_ = pts[i], pts[i + 1]
+        t = b_ - a_; L_ = t.length
+        if L_ < 1e-6: continue
+        t.normalize(); c = a_.lerp(b_, 0.5)
+        n = (c - Vector((center[0], center[1], c.z))).normalized()
+        box(bm, c, t, n.cross(t).normalized(), n, L_ * dash, 0.001, 0.0012)
+    return mesh_obj(name, bm, mat)
+
+
+def cut_by_curve(ob, center, z_fn, keep_above=True, snap=0.06):
+    """Delete faces on one side of z_fn(angle) and snap the new edge onto the
+    exact curve: clean necklines, hems, sleeve ends, boot tops, shorts legs."""
+    bm = bmesh.new(); bm.from_mesh(ob.data)
+    dead = []
+    for f in bm.faces:
+        c = f.calc_center_median(); zc = z_fn(angle_of(c, center))
+        if (c.z < zc) if keep_above else (c.z > zc):
+            dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    for v in bm.verts:
+        if v.is_boundary:
+            zc = z_fn(angle_of(v.co, center))
+            if abs(v.co.z - zc) < snap:
+                v.co.z = zc
+    bm.to_mesh(ob.data); bm.free()
+
+
+def patch(name, bvh, poly2d, lift, thick, mat, mode='cyl', center=(0, 0), subdiv=3):
+    """Polygon (tattoo, panel, label, pocket) built in the projection's 2D
+    space, subdivided, then EVERY vertex projected so it hugs curved surfaces."""
+    bm = bmesh.new()
+    vs = [bm.verts.new(Vector((u, v, 0))) for u, v in poly2d]
+    bm.faces.new(vs)
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    for _ in range(subdiv):
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
+    for v in bm.verts:
+        p = project(bvh, [(v.co.x, v.co.y)], mode, center)
+        if not p:
+            bm.free(); return None
+        v.co = p[0][0] + p[0][1] * lift
+    ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=1.0); smooth(ob)
+    return ob
+
+
+def bvh_union(objs):
+    """One BVH over several meshes (e.g. forearm + hand: the hand overlaps the
+    wrist, so anything at the wrist must project onto both)."""
+    bm = bmesh.new()
+    for ob in objs:
+        tmp = bmesh.new(); tmp.from_mesh(ob.data); tmp.transform(ob.matrix_world)
+        me = bpy.data.meshes.new('_u'); tmp.to_mesh(me); tmp.free()
+        bm.from_mesh(me); bpy.data.meshes.remove(me)
+    t = BVHTree.FromBMesh(bm); bm.free()
+    return t
+
+
+# ------------------------------------------------------------------ plants: leaves, vines, tendrils
+def leaf(name, base, direction, normal, mat, length=0.07, width=0.04, kind='pointed', fold=0.3,
+         curl=0.25, twist=0.0, vein_mat=None, thick=0.0025):
+    """Stylized leaf: grid inside an outline, V-folded along the midrib, tip
+    curling back, petiole stub, optional raised midrib + side veins.
+    kind: 'pointed' (lanceolate), 'ivy' (3-lobed), 'round'."""
+    d = direction.normalized()
+    n = (normal - d * normal.dot(d)).normalized()
+    sd = d.cross(n)
+    if twist:
+        q = math.radians(twist)
+        sd, n = sd * math.cos(q) + n * math.sin(q), n * math.cos(q) - sd * math.sin(q)
+
+    def half_w(u):
+        if kind == 'ivy':
+            lobe = 1 + 0.45 * max(0.0, math.sin(math.pi * (u - 0.15) / 0.5)) ** 2 if u < 0.65 else 1.0
+            return width / 2 * (math.sin(math.pi * min(u, 0.999)) ** 0.55) * lobe * (1.15 - 0.45 * u)
+        if kind == 'round':
+            return width / 2 * math.sin(math.pi * u) ** 0.5
+        return width / 2 * (math.sin(math.pi * u) ** 0.75) * (1.1 - 0.35 * u)
+
+    NU, NV = 14, 6
+    bm = bmesh.new(); grid = []
+    for i in range(NU + 1):
+        u = i / NU; w = half_w(u)
+        row = []
+        for j in range(-NV, NV + 1):
+            v = j / NV
+            p = (base + d * (u * length) + sd * (v * w)
+                 + n * (fold * abs(v) * w)                      # V fold along the midrib
+                 - n * (curl * length * u * u))                 # tip curls back
+            row.append(bm.verts.new(p))
+        grid.append(row)
+    for i in range(NU):
+        for j in range(2 * NV):
+            a, b, c, e = grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]
+            if len({a.co.to_tuple(5), b.co.to_tuple(5), c.co.to_tuple(5), e.co.to_tuple(5)}) == 4:
+                bm.faces.new((a, b, c, e))
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=0.0); smooth(ob)
+    add_subsurf(ob, 1)
+    out = [ob]
+    stem = [base - d * length * 0.18 - n * 0.004, base - d * length * 0.05, base + d * length * 0.05]
+    out.append(tube(name + '_Stem', stem, max(0.0022, width * 0.05), vein_mat or mat, res=1))
+    if vein_mat:
+        mid = [base + d * (u * length) - n * (curl * length * u * u) + n * (thick * 0.6 + 0.0006)
+               for u in [k / 12 * 0.92 for k in range(13)]]
+        out.append(tube(name + '_Midrib', mid, max(0.0012, width * 0.035), vein_mat, res=1,
+                        radii=[1 - 0.7 * k / 12 for k in range(13)]))
+        for k, u0 in enumerate((0.25, 0.45, 0.65)):
+            for sg in (-1, 1):
+                w0 = half_w(u0 + 0.15) * 0.75
+                pts = []
+                for t in (0.0, 0.5, 1.0):
+                    u = u0 + 0.15 * t; v = sg * 0.75 * t
+                    pts.append(base + d * (u * length) + sd * (v * half_w(u)) + n * (fold * abs(v) * half_w(u))
+                               - n * (curl * length * u * u) + n * (thick * 0.6 + 0.0005))
+                out.append(tube(f'{name}_Vein{k}{sg}', pts, max(0.0008, width * 0.02), vein_mat, res=1))
+    return out
+
+
+def vine(name, path, radius, mat, taper=(1.0, 0.45), res=2):
+    """Organic vine/stem tube along a 3D path, tapering from taper[0] to taper[1]."""
+    nn = len(path)
+    radii = [taper[0] + (taper[1] - taper[0]) * i / max(1, nn - 1) for i in range(nn)]
+    return tube(name, path, radius, mat, res=res, radii=radii)
+
+
+def tendril(name, base, direction, normal, mat, length=0.05, radius=0.0025, turns=1.6):
+    """Curly tendril: a tightening spiral that leaves a vine."""
+    d = direction.normalized(); n = (normal - d * normal.dot(d)).normalized(); sd = d.cross(n)
+    pts = []
+    for i in range(40):
+        f = i / 39
+        ang = 2 * math.pi * turns * f
+        r = length * 0.35 * (1 - f) ** 1.2
+        pts.append(base + d * (length * 0.6 * f) + (sd * math.cos(ang) + n * math.sin(ang) * 0.6) * r
+                   - sd * length * 0.35 + n * 0.0)
+    return tube(name, pts, radius, mat, res=1, radii=[1 - 0.75 * i / 39 for i in range(40)])
+
+
+def surface_path(bvhs, center_fn, samples, lift):
+    """Path given as (angle_deg, z) pairs wrapped radially onto the outermost
+    of several surfaces; center_fn(z) -> (x, y) axis of the limb/torso.
+    Returns list of (co, normal). Misses are skipped."""
+    out = []
+    for a, z in samples:
+        cx, cy = center_fn(z); d = side_dir(a)
+        h = outer_hit(bvhs, Vector((cx, cy, z)) + d * 5, -d)
+        if h is not None: out.append((h[0] + h[1] * lift, h[1]))
+    return out
+
+
 # ------------------------------------------------------------------ rig hookup + delivery
 def parent_to_part(ob, part_name):
     """Parent keep-transform and remember the target so pieces can be
