@@ -1,10 +1,10 @@
-"""Run in Blender's Text Editor after appending the 'Catwoman Morph (Top)'
+"""Run in Blender's Text Editor after appending the 'Catwoman Morph'
 collection into your Starter 2.0 Rig file. Parents every morph piece to the
 body part it belongs to (stored in its 'morph_target' property), keeping its
 current position."""
 import bpy
 
-for ob in bpy.data.collections['Catwoman Morph (Top)'].objects:
+for ob in bpy.data.collections['Catwoman Morph'].objects:
     target = bpy.data.objects.get(ob.get('morph_target', ''))
     if target is None:
         print('no target for', ob.name)

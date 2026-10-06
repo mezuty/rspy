@@ -1,14 +1,18 @@
-# Catwoman morph: top (torso + arms + gloves)
+# Catwoman morph (full catsuit)
 
-Arkham-style leather catsuit top for the Starter 2.0 Rig.
+Arkham-style leather catsuit for the Starter 2.0 Rig.
+
+- **Top:** fitted suit with an open V zipper, piped and stitched panel seams, a flared collar, buckled arm straps, and gloves with claws.
+- **Lower:** suit over the hips and legs with panel seams, two buckled straps per thigh, and knee-high heeled boots (cuffed top, inner zipper, ankle strap, toe-cap seam, sole and stacked heel).
 
 | File | What it is |
 |---|---|
-| `Catwoman_Top_Morph.blend` | Your rig with the morph already on it (collection **Catwoman Morph (Top)**) |
-| `Catwoman_Top_Morph_PiecesOnly.blend` | Only the morph pieces, to append into your own rig file |
+| `Catwoman_Morph.blend` | Your rig with the morph already on it (collection **Catwoman Morph**) |
+| `Catwoman_Morph_PiecesOnly.blend` | Only the morph pieces, to append into your own rig file |
 | `attach_to_rig.py` | After appending, run this in Blender's Text Editor to parent each piece to its body part |
-| `build_catwoman_top.py` | The script that builds the morph (`python build_catwoman_top.py <rig.blend> <out_dir>` with the `bpy` 5.2 module) |
+| `build_catwoman.py` | The script that builds the morph (`python build_catwoman.py <rig.blend> <out_dir>` with the `bpy` 5.2 module) |
+| `render_morph.py`, `render_util.py` | Preview rendering |
 | `previews/` | Renders |
 
-Pieces are parented to the body part they sit on (torso → `Robloxian2014`,
-upper/lower arm and hand → `Robloxian2012/2011/2010` and `Robloxian209/208/207`).
+Every piece is parented to the body part it sits on. The boot soles reach
+about 0.05 studs below the original feet.

@@ -1,9 +1,12 @@
-"""Catwoman (Arkham-style) catsuit morph - TOP (torso + arms + gloves).
+"""Catwoman (Arkham-style) catsuit morph - full suit.
+
+Top: torso, arms, gloves with claws. Lower: hips, legs, thigh straps and
+knee-high heeled boots.
 
 Builds the morph pieces procedurally on top of the Starter 2.0 Rig and saves
 a .blend. Run with Blender's Python (bpy 5.2):
 
-    python build_catwoman_top.py <rig.blend> <out_dir>
+    python build_catwoman.py <rig.blend> <out_dir>
 """
 import bpy, bmesh, sys, os, math
 from mathutils import Vector, Matrix
@@ -17,11 +20,14 @@ PARTS = {
     'torso': 'Robloxian2014',
     'upperarm_R': 'Robloxian2012', 'lowerarm_R': 'Robloxian2011', 'hand_R': 'Robloxian2010',
     'upperarm_L': 'Robloxian209', 'lowerarm_L': 'Robloxian208', 'hand_L': 'Robloxian207',
+    'hips': 'Robloxian2013',
+    'upperleg_R': 'Robloxian201', 'lowerleg_R': 'Robloxian202', 'foot_R': 'Robloxian203',
+    'upperleg_L': 'Robloxian204', 'lowerleg_L': 'Robloxian205', 'foot_L': 'Robloxian206',
 }
 
 # ---------------------------------------------------------------- collection
 rig_coll = bpy.data.collections['Starter 2.0 Rig']
-coll = bpy.data.collections.new('Catwoman Morph (Top)')
+coll = bpy.data.collections.new('Catwoman Morph')
 bpy.context.scene.collection.children.link(coll)
 
 
@@ -64,14 +70,23 @@ M_TAPE = principled('CW_Zipper_Tape', (0.012, 0.012, 0.013), 0.6)
 M_METAL = principled('CW_Silver', (0.80, 0.80, 0.82), 0.22, metal=1.0)
 M_CLAW = principled('CW_Claw_Steel', (0.62, 0.63, 0.66), 0.18, metal=1.0)
 M_STITCH = principled('CW_Stitch', (0.10, 0.10, 0.11), 0.7)
+M_BOOT = principled('CW_Leather_Boot', (0.008, 0.008, 0.009), 0.28, coat=0.5, coat_rough=0.1,
+                    bump=(300, 0.05))
+M_SOLE = principled('CW_Boot_Sole', (0.018, 0.018, 0.02), 0.65)
 
 
 # ------------------------------------------------------------------- helpers
-def world_copy(src_name, new_name):
+def world_copy(src_name, new_name, level=None):
     """New object holding the evaluated (subdivided) mesh of a rig part, in world space."""
     src = bpy.data.objects[src_name]
+    sub = next((m for m in src.modifiers if m.type == 'SUBSURF'), None)
+    old = sub.levels if sub else None
+    if sub and level is not None:
+        sub.levels = level
     dg = bpy.context.evaluated_depsgraph_get()
     me = bpy.data.meshes.new_from_object(src.evaluated_get(dg))
+    if sub and level is not None:
+        sub.levels = old
     me.transform(src.matrix_world)
     me.materials.clear()
     ob = bpy.data.objects.new(new_name, me)
@@ -328,7 +343,11 @@ BVH = {k: bvh_of(o) for k, o in SUIT.items()}
 
 
 def arm_center(ob, z):
-    vs = [v.co for v in ob.data.vertices if abs(v.co.z - z) < 0.02]
+    tol = 0.02
+    vs = []
+    while not vs:   # widen the slice where the mesh is sparse
+        vs = [v.co for v in ob.data.vertices if abs(v.co.z - z) < tol]
+        tol *= 2
     xs = [v.x for v in vs]; ys = [v.y for v in vs]
     return ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
 
@@ -441,6 +460,7 @@ for side, s in (('R', 1), ('L', -1)):
              group=f'hand_{side}', stitch=False)
 
 seams = {g: join(obs, 'CW_Seams_' + g) for g, obs in SEAMS.items()}
+SEAMS.clear()
 
 # piped hem along the bottom of the top
 hem = []
@@ -604,7 +624,180 @@ for side, s in (('R', 1), ('L', -1)):
         claw(f'CW_Claw_{side}{k}', hit + n * 0.002, Vector((-s * 0.55, 0, -1)), Vector((-s, 0, 0)),
              length=0.085, radius=0.02)
 
-# ========================================================= 7. finishing
+
+# ========================================================= 7. LOWER BODY
+def leg_center(ob, z):
+    return arm_center(ob, z)
+
+
+hips = world_copy(PARTS['hips'], 'CW_Suit_Hips')
+offset_shell(hips, 0.017)
+hips.data.materials.append(M_SUIT); smooth(hips)
+SUIT['hips'] = hips
+
+LOW = {}   # extra objects per group
+BOOT_TOP = 0.90    # just under the knee joint; the front rises a little
+
+
+def boot_top_z(ang_deg):
+    f = max(0.0, math.sin(math.radians(ang_deg)))      # 1 at the front (+Y)
+    return BOOT_TOP + 0.035 * f ** 3
+
+
+for side in ('R', 'L'):
+    ul = world_copy(PARTS[f'upperleg_{side}'], f'CW_Suit_Upperleg_{side}')
+    offset_shell(ul, 0.016)
+    ul.data.materials.append(M_SUIT); smooth(ul)
+    SUIT[f'upperleg_{side}'] = ul
+
+    # catsuit continues under the boot, so the knee never shows skin
+    under = world_copy(PARTS[f'lowerleg_{side}'], f'CW_Suit_Lowerleg_{side}')
+    offset_shell(under, 0.016)
+    under.data.materials.append(M_SUIT); smooth(under)
+    add_solidify(under, 0.010, offset=-1.0); add_subsurf(under, 1, 2)
+    LOW.setdefault(f'lowerleg_{side}', []).append(under)
+
+    ll = world_copy(PARTS[f'lowerleg_{side}'], f'CW_Boot_Leg_{side}', level=3)
+    offset_shell(ll, 0.026)
+    ll.data.materials.append(M_BOOT); smooth(ll)
+    ft = world_copy(PARTS[f'foot_{side}'], f'CW_Boot_Foot_{side}')
+    offset_shell(ft, 0.024)
+    ft.data.materials.append(M_BOOT); smooth(ft)
+    SUIT[f'lowerleg_{side}'] = ll; SUIT[f'foot_{side}'] = ft
+
+for k in ('hips', 'upperleg_R', 'upperleg_L', 'lowerleg_R', 'lowerleg_L', 'foot_R', 'foot_L'):
+    BVH[k] = bvh_of(SUIT[k])
+
+# open the top of each boot along a curved line (peaks over the knee)
+BOOT_C = {}
+for side in ('R', 'L'):
+    ll = SUIT[f'lowerleg_{side}']
+    cx, cy = leg_center(ll, 0.8); BOOT_C[side] = (cx, cy)
+    bm = bmesh.new(); bm.from_mesh(ll.data)
+    dead = []
+    for f in bm.faces:
+        c = f.calc_center_median()
+        ang = math.degrees(math.atan2(c.y - cy, c.x - cx))
+        if c.z > boot_top_z(ang): dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context='FACES')
+    # snap the opening onto the exact cut curve so the cuff sits flush
+    for v in bm.verts:
+        if v.is_boundary:
+            ang = math.degrees(math.atan2(v.co.y - cy, v.co.x - cx))
+            v.co.z = boot_top_z(ang)
+    bm.to_mesh(ll.data); bm.free()
+
+def low_add(group, ob):
+    LOW.setdefault(group, []).append(ob)
+    return ob
+
+
+for side, s in (('R', 1), ('L', -1)):
+    cx, cy = BOOT_C[side]
+    bvh = BVH[f'lowerleg_{side}']
+    # rolled cuff following the boot top
+    pts = []
+    for i in range(73):
+        a = 360.0 * i / 72
+        r = Vector((math.cos(math.radians(a)), math.sin(math.radians(a)), 0))
+        z = boot_top_z(a) - 0.004
+        hit, n, _, _ = bvh.ray_cast(Vector((cx, cy, z)) + r * 2, -r)
+        pts.append(hit + n * 0.004)
+    low_add(f'lowerleg_{side}', to_mesh(curve_tube(f'CW_BootCuff_{side}', pts, 0.016, M_BOOT)))
+
+    # zipper on the inner side of the boot
+    ang_in = 180 + 25 if s > 0 else -25          # inner, slightly towards the back
+    zp = project(bvh, catmull([(ang_in, BOOT_TOP - 0.03), (ang_in, 0.7), (ang_in, 0.46)], 50),
+                 'cyl', center=(cx, cy))
+    zp = resample(zp, 0.0125)
+    low_add(f'lowerleg_{side}', ribbon(f'CW_BootZipTape_{side}', zp, 0.03, 0.0015, 0.003, M_TAPE))
+    bm = bmesh.new()
+    for i, (co, n) in enumerate(zp[1:-1]):
+        t, b, n = frame_at(co, n, Vector((0, 0, -1)))
+        box(bm, co + n * 0.0045 + b * (0.0035 if i % 2 else -0.0035), t, b, n, 0.0042, 0.0080, 0.0028)
+    low_add(f'lowerleg_{side}', mesh_obj(f'CW_BootZipTeeth_{side}', bm, M_METAL))
+    co, n = zp[1]
+    t, b, n = frame_at(co, n, Vector((0, 0, -1)))
+    bm = bmesh.new(); box(bm, co + n * 0.011, t, b, n, 0.022, 0.014, 0.0065)
+    sl = low_add(f'lowerleg_{side}', mesh_obj(f'CW_BootZipSlider_{side}', bm, M_METAL))
+    bv = sl.modifiers.new('Bevel', 'BEVEL'); bv.width = 0.004; bv.segments = 3
+    tc = co + n * 0.018 + t * 0.045
+    loop = [tc + t * (math.cos(2 * math.pi * i / 24) * 0.03) + b * (math.sin(2 * math.pi * i / 24) * 0.013)
+            for i in range(25)]
+    low_add(f'lowerleg_{side}', to_mesh(curve_tube(f'CW_BootZipPull_{side}', loop, 0.0045, M_METAL)))
+
+    # ankle strap + buckle on the outer side
+    strap(f'CW_Strap_Ankle_{side}', side, s, bvh, leg_center(SUIT[f'lowerleg_{side}'], 0.5), 0.5,
+          h=0.045, lift=0.005, buckle_ang=20 if s > 0 else 160)
+
+    # sole + stacked heel
+    fb = BVH[f'foot_{side}']
+    fcx = s * 0.262; fcy = 0.055
+    outline = []
+    for i in range(64):
+        a = 2 * math.pi * i / 64
+        r = Vector((math.cos(a), math.sin(a), 0))
+        hit, n, _, _ = fb.ray_cast(Vector((fcx, fcy, 0.02)) + r * 2, -r)
+        if hit: outline.append(Vector((hit.x, hit.y, 0)) + Vector((n.x, n.y, 0)).normalized() * 0.012)
+
+    def slab(name, pts, z0, z1, shrink=1.0):
+        cen = sum(pts, Vector()) / len(pts)
+        bm = bmesh.new()
+        top = [bm.verts.new((p.x, p.y, z1)) for p in pts]
+        bot = [bm.verts.new((cen + (p - cen) * shrink).to_2d().to_3d() + Vector((0, 0, z0))) for p in pts]
+        bm.faces.new(top); bm.faces.new(bot[::-1])
+        for i in range(len(pts)):
+            j = (i + 1) % len(pts)
+            bm.faces.new((bot[i], bot[j], top[j], top[i]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        ob = mesh_obj(name, bm, M_SOLE)
+        bv = ob.modifiers.new('Bevel', 'BEVEL'); bv.width = 0.009; bv.segments = 3
+        bv.harden_normals = False
+        smooth(ob)
+        return ob
+
+    front = [p for p in outline if p.y > -0.11]
+    heel = [p for p in outline if p.y < -0.17]
+    low_add(f'foot_{side}', slab(f'CW_BootSole_{side}', front, -0.05, 0.03))
+    # chunky stacked heel: pushed out past the boot so it reads from the side and back
+    hc = sum(heel, Vector()) / len(heel)
+    heel = [hc + (p - hc) * 1.12 + Vector((0, -0.012, 0)) for p in heel]
+    low_add(f'foot_{side}', slab(f'CW_BootHeel_{side}', heel, -0.06, 0.075, shrink=0.72))
+
+    # seams: shin line, toe cap, back seam
+    seam(f'CW_Seam_Shin_{side}', [(90, BOOT_TOP + 0.04), (90, 0.75), (90, 0.5)], 'cyl', bvh,
+         n=40, center=(cx, cy), group=f'lowerleg_{side}')
+    seam(f'CW_Seam_BootBack_{side}', [(270, BOOT_TOP - 0.02), (270, 0.7), (270, 0.42)], 'cyl', bvh,
+         n=40, center=(cx, cy), group=f'lowerleg_{side}')
+    seam(f'CW_Seam_ToeCap_{side}', [(fcx - 0.19, 0.16), (fcx - 0.12, 0.25), (fcx, 0.29),
+                                    (fcx + 0.12, 0.25), (fcx + 0.19, 0.16)], 'top', fb, n=40,
+         group=f'foot_{side}')
+
+    # thigh: panel seams + two buckled straps
+    ub = BVH[f'upperleg_{side}']; ul = SUIT[f'upperleg_{side}']
+    uc = leg_center(ul, 1.5)
+    out_a = 0 if s > 0 else 180
+    seam(f'CW_Seam_ThighOut_{side}', [(out_a, 2.0), (out_a, 1.5), (out_a, 1.0)], 'cyl', ub,
+         n=50, center=uc, group=f'upperleg_{side}')
+    front_a = 68 if s > 0 else 112
+    seam(f'CW_Seam_ThighFront_{side}', [(front_a, 2.02), (front_a + 6 * s, 1.6), (front_a + 14 * s, 1.15),
+                                         (90, 1.0)], 'cyl', ub, n=50, center=uc, group=f'upperleg_{side}')
+    for k, z in enumerate((1.74, 1.56)):
+        strap(f'CW_Strap_Thigh{k}_{side}', side, s, ub, leg_center(ul, z), z, h=0.05,
+              buckle_ang=15 if s > 0 else 165)
+
+# hips: panel lines (front "brief" curve, sides, back)
+hb = BVH['hips']
+for s in (-1, 1):
+    seam(f'CW_Seam_HipFront{s}', [(s * 0.44, 2.27), (s * 0.33, 2.17), (s * 0.2, 2.06), (s * 0.08, 1.99)],
+         'front', hb, n=40, group='hips')
+    seam(f'CW_Seam_HipBack{s}', [(s * 0.44, 2.27), (s * 0.3, 2.14), (s * 0.15, 2.03), (s * 0.06, 1.99)],
+         'back', hb, n=40, group='hips')
+seam('CW_Seam_HipBackC', [(0, 2.33), (0, 2.15), (0, 1.99)], 'back', hb, n=30, group='hips')
+
+seams.update({g: join(obs, 'CW_Seams_' + g) for g, obs in SEAMS.items()})
+
+# ========================================================= 8. finishing
 for k, ob in SUIT.items():
     add_solidify(ob, 0.010, offset=-1.0)
     add_subsurf(ob, 1, 2)
@@ -619,6 +812,16 @@ for side in ('R', 'L'):
     groups[f'upperarm_{side}'].append(seams[f'upperarm_{side}'])
     groups[f'lowerarm_{side}'].append(seams[f'lowerarm_{side}'])
     groups[f'hand_{side}'] = [SUIT[f'hand_{side}'], seams[f'hand_{side}']] + [o for o in claw_objs if f'Claw_{side}' in o.name]
+    for part in ('upperleg', 'lowerleg', 'foot'):
+        k = f'{part}_{side}'
+        groups[k] = [SUIT[k]] + LOW.get(k, []) + ([seams[k]] if k in seams else [])
+    for o in coll.objects:
+        bits = o.name.split('_')
+        if o.name.startswith('CW_Strap_Thigh') and bits[3] == side:
+            groups[f'upperleg_{side}'].append(o)
+        elif o.name.startswith('CW_Strap_Ankle') and bits[3] == side:
+            groups[f'lowerleg_{side}'].append(o)
+groups['hips'] = [SUIT['hips'], seams['hips']] + LOW.get('hips', [])
 
 # seams on the arms belong to the arm groups: split by name before parenting
 for key, obs in groups.items():
@@ -632,7 +835,7 @@ for key, obs in groups.items():
 bpy.context.view_layer.update()
 os.makedirs(OUT, exist_ok=True)
 # 1) full rig + morph
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'Catwoman_Top_Morph.blend'), compress=True)
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'Catwoman_Morph.blend'), compress=True)
 
 # 2) morph pieces only (world space, unparented) to Append into your own rig file
 for ob in coll.objects:
@@ -645,6 +848,6 @@ for c in list(bpy.data.collections):
     if c != coll:
         bpy.data.collections.remove(c)
 bpy.ops.outliner.orphans_purge(do_recursive=True)
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'Catwoman_Top_Morph_PiecesOnly.blend'),
+bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'Catwoman_Morph_PiecesOnly.blend'),
                             compress=True)
 print('SAVED')
