@@ -1,18 +1,16 @@
 import bpy, math
 from mathutils import Vector
 
-def setup_render(res=(700, 1000), samples=48):
-    sc = bpy.context.scene
-    sc.render.engine = 'CYCLES'
-    sc.cycles.device = 'CPU'
-    sc.cycles.samples = samples
-    sc.cycles.use_denoising = True
-    sc.render.resolution_x, sc.render.resolution_y = res
-    sc.render.film_transparent = False
-    sc.view_settings.view_transform = 'AgX'
-    w = bpy.data.worlds.get('World') or bpy.data.worlds.new('World')
+LIGHTS_COLL = 'CW Studio Lights'
+WORLD = 'CW_Studio_World'
+
+
+def add_studio_look(sc=None):
+    """Grey studio background + soft key/fill/rim area lights (rig faces +Y).
+    Idempotent: reuses the lights/world if they already exist in the file."""
+    sc = sc or bpy.context.scene
+    w = bpy.data.worlds.get(WORLD) or bpy.data.worlds.new(WORLD)
     sc.world = w
-    w.use_nodes = True
     nt = w.node_tree
     bg = next((n for n in nt.nodes if n.type == 'BACKGROUND'), None)
     if bg is None:
@@ -21,23 +19,37 @@ def setup_render(res=(700, 1000), samples=48):
         nt.links.new(bg.outputs[0], out.inputs[0])
     bg.inputs[0].default_value = (0.045, 0.045, 0.045, 1)
     bg.inputs[1].default_value = 1.0
-    # lights: key, fill, rim (studio look similar to Blender's viewport matcap)
-    for n in [o for o in bpy.data.objects if o.name.startswith('_RL_')]:
-        bpy.data.objects.remove(n)
-    def light(name, typ, energy, loc, size=3):
-        ld = bpy.data.lights.new(name, typ); ld.energy = energy
-        if typ == 'AREA': ld.size = size
-        o = bpy.data.objects.new(name, ld); sc.collection.objects.link(o)
+    sc.view_settings.view_transform = 'AgX'
+    if LIGHTS_COLL in bpy.data.collections:
+        return
+    coll = bpy.data.collections.new(LIGHTS_COLL)
+    sc.collection.children.link(coll)
+
+    def light(name, energy, loc, size):
+        ld = bpy.data.lights.new(name, 'AREA'); ld.energy = energy; ld.size = size
+        o = bpy.data.objects.new(name, ld); coll.objects.link(o)
         o.location = loc
-        d = Vector((0, 0, 2.8)) - Vector(loc)
+        d = Vector((0, 0, 2.5)) - Vector(loc)
         o.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
-        return o
-    # rig faces +Y
-    light('_RL_key', 'AREA', 900, (-3.5, 5, 6), 4)
-    light('_RL_fill', 'AREA', 400, (4.5, 4, 3), 5)
-    light('_RL_rim', 'AREA', 700, (1.5, -5, 5), 3)
-    light('_RL_rim2', 'AREA', 350, (-3, -4, 2), 3)
-    light('_RL_top', 'AREA', 250, (0, 1, 8), 4)
+
+    light('CW_Light_Key', 1000, (-3.5, 5, 6), 4)
+    light('CW_Light_Fill', 450, (4.5, 4, 3), 5)
+    light('CW_Light_Rim', 750, (1.5, -5, 5), 3)
+    light('CW_Light_Rim2', 400, (-3, -4, 2), 3)
+    light('CW_Light_Top', 250, (0, 1, 8), 4)
+    light('CW_Light_Low', 200, (0, 5, 0.3), 4)   # lifts the boots out of the shadows
+
+
+def setup_render(res=(700, 1000), samples=48):
+    sc = bpy.context.scene
+    sc.render.engine = 'CYCLES'
+    sc.cycles.device = 'CPU'
+    sc.cycles.samples = samples
+    sc.cycles.use_denoising = True
+    sc.render.resolution_x, sc.render.resolution_y = res
+    sc.render.film_transparent = False
+    add_studio_look(sc)
+
 
 def render_view(path, loc, target=(0, 0, 2.9), lens=60, res=None):
     sc = bpy.context.scene

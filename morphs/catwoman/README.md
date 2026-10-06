@@ -4,6 +4,18 @@ Arkham-style leather catsuit for the Starter 2.0 Rig.
 
 - **Top:** fitted suit with an open V zipper, piped and stitched panel seams, a flared collar, buckled arm straps, and gloves with claws.
 - **Lower:** suit over the hips and legs with panel seams, two buckled straps per thigh, and knee-high heeled boots (cuffed top, inner zipper, ankle strap, toe-cap seam, sole and stacked heel).
+- **Whip:** Arkham Knight-style braided bullwhip coiled on her left hip, hanging from a D-ring on a slim slung belt (front buckle, eyelets, keeper). Braided grip, gunmetal ferrule and pommel, tapered fall and cracker.
+- **Folds:** stylized leather folds at the inner elbows, behind the knees, at the waist sides and round the boot ankles.
+
+## Why the file looks like the previews
+
+The `.blend` saves a studio setup: the **CW Studio Lights** collection, a grey
+**CW_Studio_World**, EEVEE as the render engine, and every 3D viewport set to
+Material Preview using those scene lights and world. With Blender's default
+Material Preview HDRI, the glossy black leather reflects an outdoor scene and
+looks washed out. If a viewport still looks off, open the viewport shading popover
+(the arrow next to the shading buttons) and enable **Scene Lights** and **Scene World**.
+`previews/viewport_eevee.png` shows the EEVEE look.
 
 | File | What it is |
 |---|---|

@@ -69,10 +69,13 @@ M_STRAP = principled('CW_Leather_Strap', (0.016, 0.016, 0.018), 0.36, coat=0.3, 
 M_TAPE = principled('CW_Zipper_Tape', (0.012, 0.012, 0.013), 0.6)
 M_METAL = principled('CW_Silver', (0.80, 0.80, 0.82), 0.22, metal=1.0)
 M_CLAW = principled('CW_Claw_Steel', (0.62, 0.63, 0.66), 0.18, metal=1.0)
-M_STITCH = principled('CW_Stitch', (0.10, 0.10, 0.11), 0.7)
+M_STITCH = principled('CW_Stitch', (0.05, 0.05, 0.055), 0.6)
 M_BOOT = principled('CW_Leather_Boot', (0.008, 0.008, 0.009), 0.28, coat=0.5, coat_rough=0.1,
                     bump=(300, 0.05))
 M_SOLE = principled('CW_Boot_Sole', (0.018, 0.018, 0.02), 0.65)
+M_WHIP = principled('CW_Whip_Leather', (0.014, 0.012, 0.011), 0.42, coat=0.35, coat_rough=0.2,
+                    bump=(220, 0.15))
+M_GUNMETAL = principled('CW_Gunmetal', (0.18, 0.18, 0.19), 0.3, metal=1.0)
 
 
 # ------------------------------------------------------------------- helpers
@@ -115,6 +118,53 @@ def smooth_region(ob, weight_fn, iters=20):
             new[v] = v.co.lerp(avg, 0.5 * w)
         for v, c in new.items(): v.co = c
     bm.to_mesh(ob.data); bm.free()
+
+
+def add_folds(ob, center, radii, axis, amp, wavelength, face_dir=None, min_dot=0.0, sharp=1.6,
+              wobble=0.12):
+    """Stylized cloth folds: soft ridges across `axis` inside an ellipsoid region,
+    pushed out along the surface normal (narrow ridges, wide valleys)."""
+    bm = bmesh.new(); bm.from_mesh(ob.data); bm.normal_update()
+    axis = Vector(axis).normalized(); c = Vector(center)
+    fd = Vector(face_dir).normalized() if face_dir else None
+    for v in bm.verts:
+        d = v.co - c
+        q = (d.x / radii[0]) ** 2 + (d.y / radii[1]) ** 2 + (d.z / radii[2]) ** 2
+        if q >= 1: continue
+        w = (1 - q) ** 2
+        if fd is not None:
+            k = v.normal.dot(fd)
+            if k <= min_dot: continue
+            w *= min(1.0, (k - min_dot) / 0.3)
+        a = d.dot(axis) / wavelength + wobble * math.sin(d.x * 4.0 + d.y * 5.0)
+        ridge = (1 - abs(math.sin(math.pi * a))) ** sharp
+        v.co += v.normal * (amp * w * (ridge - 0.2))
+    bm.to_mesh(ob.data); bm.free()
+
+
+def outer_hit(bvhs, o, d):
+    """First hit of a ray against several surfaces."""
+    best = None
+    for b in bvhs:
+        h = b.ray_cast(o, d)
+        if h[0] is not None and (best is None or h[3] < best[3]):
+            best = h
+    return best
+
+
+def parallel_frames(pts):
+    """Tangent/normal/binormal along a polyline (parallel transport)."""
+    T = []
+    for i in range(len(pts)):
+        a = pts[max(i - 1, 0)]; b = pts[min(i + 1, len(pts) - 1)]
+        T.append((b - a).normalized())
+    ref = Vector((0, 0, 1)) if abs(T[0].z) < 0.9 else Vector((1, 0, 0))
+    N = [(ref - T[0] * ref.dot(T[0])).normalized()]
+    for i in range(1, len(pts)):
+        n = N[-1] - T[i] * N[-1].dot(T[i])
+        N.append(n.normalized() if n.length > 1e-8 else N[-1])
+    B = [t.cross(n) for t, n in zip(T, N)]
+    return T, N, B
 
 
 def smooth(ob):
@@ -182,11 +232,12 @@ def project(bvh, pts2d, mode, center=(0.0, 0.0)):
     return res
 
 
-def curve_tube(name, pts, radius, mat, res=3, caps=True):
+def curve_tube(name, pts, radius, mat, res=3, caps=True, radii=None):
     cu = bpy.data.curves.new(name, 'CURVE'); cu.dimensions = '3D'
     sp = cu.splines.new('POLY'); sp.points.add(len(pts) - 1)
     for i, p in enumerate(pts):
         sp.points[i].co = (*p, 1)
+        if radii: sp.points[i].radius = radii[i]
     cu.bevel_depth = radius; cu.bevel_resolution = res; cu.use_fill_caps = caps
     ob = bpy.data.objects.new(name, cu); coll.objects.link(ob)
     ob.data.materials.append(mat)
@@ -295,6 +346,10 @@ def navel_w(c):
 
 
 smooth_region(torso, navel_w, 160)
+for s_ in (-1, 1):
+    # light compression folds at the sides of the waist
+    add_folds(torso, (s_ * 0.37, 0, 2.68), (0.14, 0.32, 0.16), (0, 0, 1), 0.0045, 0.048,
+              face_dir=(s_, 0, 0), min_dot=0.35)
 
 # --- open V-neck (zipper pulled down), cut with two clean bisect planes
 V_TOP_Z, V_BOT_Z, V_HALF = 3.80, 3.10, 0.229
@@ -321,8 +376,13 @@ SUIT['torso'] = torso
 
 for side in ('R', 'L'):
     for part, off in (('upperarm', 0.016), ('lowerarm', 0.016), ('hand', 0.011)):
-        ob = world_copy(PARTS[f'{part}_{side}'], f'CW_Suit_{part.capitalize()}_{side}')
+        ob = world_copy(PARTS[f'{part}_{side}'], f'CW_Suit_{part.capitalize()}_{side}', level=2)
         offset_shell(ob, off)
+        s = 1 if side == 'R' else -1
+        if part in ('upperarm', 'lowerarm'):
+            # bunched leather at the inside of the elbow
+            add_folds(ob, (s * 0.74, 0.12, 2.79), (0.26, 0.24, 0.14), (s * 0.25, 0, 1), 0.010, 0.06,
+                      face_dir=(0, 1, 0), min_dot=0.0)
         SUIT[f'{part}_{side}'] = ob
 
 # glove = hand + lower forearm (below the cuff line); rest of sleeve = suit
@@ -645,22 +705,31 @@ def boot_top_z(ang_deg):
 
 
 for side in ('R', 'L'):
-    ul = world_copy(PARTS[f'upperleg_{side}'], f'CW_Suit_Upperleg_{side}')
+    s_ = 1 if side == 'R' else -1
+    ul = world_copy(PARTS[f'upperleg_{side}'], f'CW_Suit_Upperleg_{side}', level=2)
     offset_shell(ul, 0.016)
+    # creases behind the knee and at the front of the hip
+    add_folds(ul, (s_ * 0.26, -0.25, 1.06), (0.3, 0.2, 0.13), (0, 0, 1), 0.011, 0.045,
+              face_dir=(0, -1, 0), min_dot=0.1)
+    add_folds(ul, (s_ * 0.2, 0.25, 2.0), (0.25, 0.2, 0.1), (s_ * 0.6, 0, 1), 0.005, 0.05,
+              face_dir=(0, 1, 0), min_dot=0.2)
     ul.data.materials.append(M_SUIT); smooth(ul)
     SUIT[f'upperleg_{side}'] = ul
 
     # catsuit continues under the boot, so the knee never shows skin
-    under = world_copy(PARTS[f'lowerleg_{side}'], f'CW_Suit_Lowerleg_{side}')
+    under = world_copy(PARTS[f'lowerleg_{side}'], f'CW_Suit_Lowerleg_{side}', level=2)
     offset_shell(under, 0.016)
     under.data.materials.append(M_SUIT); smooth(under)
-    add_solidify(under, 0.010, offset=-1.0); add_subsurf(under, 1, 2)
+    add_solidify(under, 0.010, offset=-1.0); add_subsurf(under, 1, 1)
     LOW.setdefault(f'lowerleg_{side}', []).append(under)
 
     ll = world_copy(PARTS[f'lowerleg_{side}'], f'CW_Boot_Leg_{side}', level=3)
     offset_shell(ll, 0.026)
+    cxb, cyb = arm_center(ll, 0.62)
+    # slouch wrinkles round the ankle, deeper at the front
+    add_folds(ll, (cxb, cyb + 0.06, 0.63), (0.42, 0.45, 0.1), (0, 0, 1), 0.013, 0.055)
     ll.data.materials.append(M_BOOT); smooth(ll)
-    ft = world_copy(PARTS[f'foot_{side}'], f'CW_Boot_Foot_{side}')
+    ft = world_copy(PARTS[f'foot_{side}'], f'CW_Boot_Foot_{side}', level=2)
     offset_shell(ft, 0.024)
     ft.data.materials.append(M_BOOT); smooth(ft)
     SUIT[f'lowerleg_{side}'] = ll; SUIT[f'foot_{side}'] = ft
@@ -795,12 +864,247 @@ for s in (-1, 1):
          'back', hb, n=40, group='hips')
 seam('CW_Seam_HipBackC', [(0, 2.33), (0, 2.15), (0, 1.99)], 'back', hb, n=30, group='hips')
 
+
+# ========================================================= 7b. HIP BELT + WHIP (her left hip)
+BELT_H = 0.046
+BELT_C = Vector((0, -0.01, 0))
+belt_bvhs = [BVH['hips'], BVH['torso'], BVH['upperleg_R'], BVH['upperleg_L']]
+
+
+def belt_z(a_deg):
+    # slung low on her left (-X) where the whip hangs
+    return 2.10 + 0.07 * math.cos(math.radians(a_deg))
+
+
+def belt_point(a_deg, dz=0.0, lift=0.006):
+    r = Vector((math.cos(math.radians(a_deg)), math.sin(math.radians(a_deg)), 0))
+    h = outer_hit(belt_bvhs, BELT_C + Vector((0, 0, belt_z(a_deg) + dz)) + r * 2, -r)
+    return h[0] + h[1] * lift, h[1]
+
+
+NB = 144
+bm = bmesh.new(); rows = []
+for i in range(NB):
+    a = 360.0 * i / NB
+    rows.append([bm.verts.new(belt_point(a, dz)[0]) for dz in (-BELT_H / 2, BELT_H / 2)])
+for i in range(NB):
+    r0, r1 = rows[i], rows[(i + 1) % NB]
+    bm.faces.new((r0[0], r1[0], r1[1], r0[1]))
+belt = mesh_obj('CW_Belt', bm, M_STRAP)
+add_solidify(belt, 0.013, offset=1.0)
+bvm = belt.modifiers.new('Bevel', 'BEVEL'); bvm.width = 0.0035; bvm.segments = 2
+smooth(belt)
+low_add('hips', belt)
+
+# stitching along both belt edges
+bm = bmesh.new()
+for i in range(0, 360 * 2, 3):
+    a = i / 2.0
+    p0, n0 = belt_point(a, lift=0.006 + 0.0135)
+    p1, _ = belt_point(a + 0.8, lift=0.006 + 0.0135)
+    t = (p1 - p0).normalized(); b = n0.cross(t).normalized()
+    for sgn in (-1, 1):
+        box(bm, p0 + b * sgn * (BELT_H / 2 - 0.008), t, b, n0, 0.0055, 0.0011, 0.0011)
+low_add('hips', mesh_obj('CW_Belt_Stitch', bm, M_STITCH))
+
+
+def belt_frame(a_deg, lift):
+    p, n = belt_point(a_deg, lift=lift)
+    p2, _ = belt_point(a_deg + 1.0, lift=lift)
+    t = (p2 - p).normalized()
+    b = n.cross(t).normalized()
+    if b.z < 0: b = -b
+    return p, t, b, n
+
+
+# front buckle (slightly off-centre, on her right)
+bp, bt, bb, bn = belt_frame(62, 0.006 + 0.013 + 0.007)
+fw, fh = 0.05, 0.038
+frame = []
+for i in range(41):
+    u = 2 * math.pi * i / 40
+    cx = math.copysign(abs(math.cos(u)) ** 0.4, math.cos(u)) * fw
+    cz = math.copysign(abs(math.sin(u)) ** 0.4, math.sin(u)) * fh
+    frame.append(bp + bt * cx + bb * cz)
+low_add('hips', to_mesh(curve_tube('CW_Belt_Buckle', frame, 0.0085, M_METAL)))
+low_add('hips', to_mesh(curve_tube('CW_Belt_BuckleBar', [bp - bt * 0.008 - bb * fh, bp - bt * 0.008 + bb * fh],
+                                   0.006, M_METAL)))
+low_add('hips', to_mesh(curve_tube('CW_Belt_Prong', [bp - bt * 0.008 + bn * 0.004, bp + bt * fw * 0.9 + bn * 0.006],
+                                   0.0038, M_METAL)))
+# belt tip running past the buckle, with two eyelets
+tip = bmesh.new()
+tip_c = bp + bt * (fw + 0.05) - bn * 0.006
+box(tip, tip_c, bt, bb, bn, 0.055, BELT_H * 0.44, 0.0065)
+tob = mesh_obj('CW_Belt_Tip', tip, M_STRAP)
+tbv = tob.modifiers.new('Bevel', 'BEVEL'); tbv.width = 0.006; tbv.segments = 3
+low_add('hips', tob)
+for k in range(2):
+    ec = tip_c + bt * (0.012 + 0.03 * k) + bn * 0.007
+    ring = [ec + bt * math.cos(2 * math.pi * i / 16) * 0.0065 + bb * math.sin(2 * math.pi * i / 16) * 0.0065
+            for i in range(17)]
+    low_add('hips', to_mesh(curve_tube(f'CW_Belt_Eyelet{k}', ring, 0.0022, M_METAL)))
+# keeper loop next to the buckle
+kp, kt, kb, kn = belt_frame(52, 0.006 + 0.013)
+keep_ = bmesh.new(); box(keep_, kp + kn * 0.006, kt, kb, kn, 0.008, BELT_H * 0.56, 0.006)
+kob = mesh_obj('CW_Belt_Keeper', keep_, M_STRAP)
+kbv = kob.modifiers.new('Bevel', 'BEVEL'); kbv.width = 0.003; kbv.segments = 2
+low_add('hips', kob)
+
+# --- D-ring hanging off the belt on her left hip
+WA = 196.0
+dp, dt, db, dn = belt_frame(WA, 0.006 + 0.013)
+d_top = dp - db * (BELT_H / 2 - 0.004) + dn * 0.006
+dring = [d_top - dt * 0.024 + dn * 0.0, d_top + dt * 0.024]
+for i in range(1, 16):
+    a = math.pi * i / 16
+    dring.append(d_top + dt * (0.024 * math.cos(a)) - db * (0.03 * math.sin(a)) + dn * 0.004 * math.sin(a))
+dring.append(d_top - dt * 0.024)
+low_add('hips', to_mesh(curve_tube('CW_Whip_DRing', dring, 0.005, M_METAL)))
+d_bottom = d_top - db * 0.03
+
+# --- the coiled bullwhip
+wr = Vector((math.cos(math.radians(WA)), math.sin(math.radians(WA)), 0))   # out from the hip
+up = Vector((0, 0, 1))
+fwd = wr.cross(up).normalized()
+if fwd.y < 0: fwd = -fwd                                                      # towards her front
+COIL_R = 0.112
+h0 = outer_hit(belt_bvhs, Vector((0, 0, 1.79)) + wr * 2, -wr)
+C = h0[0] + wr * 0.092
+C.z = d_bottom.z - 0.035 - COIL_R * 1.08 - 0.012
+
+coil = []
+TURNS = 4.4
+NPTS = 1300
+for i in range(NPTS):
+    f = i / (NPTS - 1)
+    th = math.radians(-70) + 2 * math.pi * TURNS * f
+    # tightly bundled loops with a little hand-coiled irregularity
+    rr = COIL_R * (1.0 + 0.035 * math.sin(th * 0.7 + 0.4) + 0.02 * math.sin(th * 2.3))
+    p = (C + fwd * math.cos(th) * rr + up * math.sin(th) * rr * 1.1
+         + wr * (-0.034 + 0.068 * f + 0.005 * math.sin(th * 1.3))
+         - up * 0.01 * f)
+    coil.append(p)
+
+# handle: hangs down and forward out of the bundle
+start = coil[0]
+hdir = (fwd * 0.42 - up * 1.0 + wr * 0.12).normalized()
+H_LEN = 0.25
+ferrule = start - (coil[1] - coil[0]).normalized() * 0.004
+grip0 = ferrule + hdir * 0.03
+grip1 = grip0 + hdir * (H_LEN - 0.05)
+pom = grip1 + hdir * 0.02
+
+# thong: from the ferrule, through the coil, out into the fall
+fall = []
+end = coil[-1]; tdir = (coil[-1] - coil[-2]).normalized()
+for i in range(1, 40):
+    f = i / 39
+    bend = (tdir * (1 - f) + (-up * 1.0 + wr * 0.15 - fwd * 0.2) * f).normalized()
+    fall.append((fall[-1] if fall else end) + bend * 0.0045)
+thong = [grip0, ferrule] + coil + fall
+L = [0.0]
+for a, b in zip(thong, thong[1:]):
+    L.append(L[-1] + (b - a).length)
+total = L[-1]
+
+
+def thong_scale(l):
+    f = l / total
+    return 1.0 - 0.6 * f ** 0.9           # thick at the handle, thin at the fall
+
+
+T, N, B = parallel_frames(thong)
+PERIOD = 0.03
+STRAND_R = 0.0105
+BRAID_R = 0.0092
+for k in range(3):
+    pts, radii = [], []
+    for i, p in enumerate(thong):
+        sc_ = thong_scale(L[i])
+        ph = 2 * math.pi * L[i] / PERIOD + 2 * math.pi * k / 3
+        pts.append(p + (N[i] * math.cos(ph) + B[i] * math.sin(ph)) * BRAID_R * sc_)
+        radii.append(sc_)
+    low_add('hips', to_mesh(curve_tube(f'CW_Whip_Strand{k}', pts, STRAND_R, M_WHIP, res=1, radii=radii)))
+# core keeps the braid from looking hollow
+low_add('hips', to_mesh(curve_tube('CW_Whip_Core', thong, STRAND_R * 1.15, M_WHIP, res=2,
+                                   radii=[thong_scale(l) for l in L])))
+
+# cracker: a few thin splayed threads at the tip
+tip_p = thong[-1]; tip_d = (thong[-1] - thong[-2]).normalized()
+_, tn, tb = parallel_frames([thong[-2], thong[-1]])
+for k in range(5):
+    a = 2 * math.pi * k / 5
+    sd = (tn[1] * math.cos(a) + tb[1] * math.sin(a)) * 0.35
+    pts = [tip_p + (tip_d + sd * (j / 6) ** 1.5) * 0.008 * j for j in range(7)]
+    low_add('hips', to_mesh(curve_tube(f'CW_Whip_Cracker{k}', pts, 0.0016, M_WHIP, res=1)))
+
+# grip: leather core with a criss-cross braided wrap, gunmetal ferrule + pommel
+low_add('hips', to_mesh(curve_tube('CW_Whip_Grip', [grip0 - hdir * 0.012, grip1 + hdir * 0.005], 0.022, M_WHIP)))
+_, gn, gb = parallel_frames([grip0, grip1])
+gn, gb = gn[0], gb[0]
+for k, hand in enumerate((1, -1)):
+    for j in range(2):
+        pts = []
+        for i in range(121):
+            f = i / 120
+            a = hand * 2 * math.pi * 5 * f + math.pi * j
+            pts.append(grip0.lerp(grip1, f) + (gn * math.cos(a) + gb * math.sin(a)) * 0.0232)
+        low_add('hips', to_mesh(curve_tube(f'CW_Whip_GripWrap{k}{j}', pts, 0.0038, M_WHIP, res=1)))
+low_add('hips', to_mesh(curve_tube('CW_Whip_Ferrule', [ferrule + hdir * 0.002, grip0 + hdir * 0.002], 0.026,
+                                   M_GUNMETAL)))
+for j, (aa, rr_) in enumerate(((0.0, 0.0275), (1.0, 0.0275))):
+    c_ = (ferrule + hdir * 0.002).lerp(grip0 + hdir * 0.002, aa)
+    ring = [c_ + (gn * math.cos(2 * math.pi * i / 24) + gb * math.sin(2 * math.pi * i / 24)) * rr_
+            for i in range(25)]
+    low_add('hips', to_mesh(curve_tube(f'CW_Whip_FerruleRing{j}', ring, 0.0025, M_METAL)))
+low_add('hips', to_mesh(curve_tube('CW_Whip_PommelNeck', [grip1, pom], 0.025, M_GUNMETAL)))
+pm = bmesh.new()
+bmesh.ops.create_uvsphere(pm, u_segments=20, v_segments=12, radius=0.027)
+for v in pm.verts:
+    v.co = pom + hdir * 0.004 + gn * v.co.x + gb * v.co.y + hdir * (v.co.z * 0.75)
+pob = mesh_obj('CW_Whip_Pommel', pm, M_METAL); smooth(pob)
+low_add('hips', pob)
+# lanyard loop through the pommel
+lan = [pom + hdir * 0.02 + (gn * math.cos(a) * 0.012 + hdir * (math.sin(a) * 0.022 + 0.022))
+       for a in [math.pi * 2 * i / 24 for i in range(25)]]
+low_add('hips', to_mesh(curve_tube('CW_Whip_Lanyard', lan, 0.0028, M_STRAP)))
+
+# --- hanger: strap from the D-ring wrapping the top of the coil, with a snap
+bundle_top = C + up * COIL_R * 1.1
+wrap_c = bundle_top + wr * 0.0
+bm = bmesh.new(); rows = []
+for i in range(32):
+    a = 2 * math.pi * i / 32
+    c_ = wrap_c + up * math.sin(a) * 0.05 + wr * math.cos(a) * 0.06
+    rows.append((bm.verts.new(c_ - fwd * 0.016), bm.verts.new(c_ + fwd * 0.016)))
+for i in range(32):
+    r0, r1 = rows[i], rows[(i + 1) % 32]
+    bm.faces.new((r0[0], r1[0], r1[1], r0[1]))
+hang = mesh_obj('CW_Whip_HangerLoop', bm, M_STRAP)
+add_solidify(hang, 0.006, offset=1.0); smooth(hang)
+low_add('hips', hang)
+# vertical strap up to the D-ring
+s0 = wrap_c + up * 0.05 + wr * 0.004
+s1 = d_bottom + db * 0.004
+pth = [(s0.lerp(s1, i / 10), wr) for i in range(11)]
+low_add('hips', ribbon('CW_Whip_HangerStrap', pth, 0.028, 0.0, 0.006, M_STRAP))
+snap = wrap_c + wr * 0.068 + up * 0.0
+sn = bmesh.new(); bmesh.ops.create_uvsphere(sn, u_segments=16, v_segments=8, radius=0.009)
+for v in sn.verts:
+    v.co = snap + Vector((v.co.x, v.co.y, v.co.z)) * 1.0
+    v.co += wr * (-(v.co - snap).dot(wr) * 0.55)
+snob = mesh_obj('CW_Whip_Snap', sn, M_METAL); smooth(snob)
+low_add('hips', snob)
+
 seams.update({g: join(obs, 'CW_Seams_' + g) for g, obs in SEAMS.items()})
 
 # ========================================================= 8. finishing
 for k, ob in SUIT.items():
     add_solidify(ob, 0.010, offset=-1.0)
-    add_subsurf(ob, 1, 2)
+    if k in ('torso', 'hips'):
+        add_subsurf(ob, 2, 2)      # copied at level 1
+    else:
+        add_subsurf(ob, 1, 1)      # already copied at a higher level
 
 # group per rig part & parent so the morph follows the rig parts
 groups = {
@@ -834,6 +1138,30 @@ for key, obs in groups.items():
 
 bpy.context.view_layer.update()
 os.makedirs(OUT, exist_ok=True)
+
+# ---- make the file open looking like the previews: studio lights + grey world,
+# EEVEE, and every 3D viewport in Material Preview using those scene lights.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from render_util import add_studio_look
+sc = bpy.context.scene
+add_studio_look(sc)
+for eng in ('BLENDER_EEVEE', 'BLENDER_EEVEE_NEXT'):
+    try:
+        sc.render.engine = eng
+        break
+    except TypeError:
+        pass
+for attr, val in (('use_raytracing', True), ('use_shadows', True), ('use_gtao', True)):
+    if hasattr(sc.eevee, attr):
+        setattr(sc.eevee, attr, val)
+for scr in bpy.data.screens:
+    for area in scr.areas:
+        for sp in area.spaces:
+            if sp.type == 'VIEW_3D':
+                sh = sp.shading
+                sh.type = 'MATERIAL'
+                sh.use_scene_lights = True; sh.use_scene_world = True
+                sh.use_scene_lights_render = True; sh.use_scene_world_render = True
 # 1) full rig + morph
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'Catwoman_Morph.blend'), compress=True)
 
