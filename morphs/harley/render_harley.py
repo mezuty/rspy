@@ -22,8 +22,10 @@ V = {   # rig faces +Y
  'holster':  ((-2.6, -0.6, 2.95), (-0.55, -0.05, 2.95), 50),
  'top34':    ((3.2, 4.2, 3.3), (0, 0, 2.95), 55),
  'topback':  ((-1.0, -4.6, 3.2), (0, 0, 2.95), 55),
+ 'hipsback': ((0.6, -3.2, 2.15), (0, 0, 2.05), 50),
+ 'heel':     ((1.2, -2.6, 0.6), (0, 0, 0.35), 50),
  'neck':     ((0.3, 2.0, 3.75), (0, 0, 3.6), 50),
 }
 for v in views:
     loc, tgt, lens = V[v]
-    mt.render_view(os.path.join(out, f'hq_{v}.png'), loc, tgt, lens=lens, res=(800, 1000), samples=int(os.environ.get('SAMPLES', 32)))
+    mt.render_view(os.path.join(out, f'hq_{v}.png'), loc, tgt, lens=lens, res=tuple(int(x) for x in os.environ.get('RES', '800,1000').split(',')), samples=int(os.environ.get('SAMPLES', 32)))
