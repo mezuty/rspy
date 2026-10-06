@@ -2,20 +2,20 @@
 
 Built on the Starter 2.0 Rig with `../toolkit/morph_toolkit.py`. No bat.
 
-- **Shirt:** loose, distressed white raglan tee.
-  - Red raglan shoulders and a ribbed red collar.
-  - Sleeves end below the elbow, with stripes above the elbow: red/red on her right, red/blue on her left. Matching cuff bindings.
-  - Torn holes with frayed threads.
-  - "Daddy's Lil Monster" print: black script with a red drop shadow, set in Lobster (an open font license, see `fonts/OFL.txt`).
-- **Shoulder holster:** straps over both shoulders crossing at a back ring, stitched, with a holster, flap, snap and pistol grip under her left arm.
-- **Choker:** red, with gold "PUDDIN" letters and a ring.
-- **Shorts:** sequin hot pants, red on her right and blue on her left, with bound leg openings.
-- **Belt:** black, with two rows of gold pyramid studs and the gold double-diamond buckle.
-- **Fishnet tights:** a real mesh net (Wireframe modifier) over the legs. Small diamond tattoos on her right thigh.
+**Current pass: TOP** (torso, arms, hands). The lower body is the next pass;
+the first draft of it is in `lower_v1_draft.py`.
+
+- **Fitted raglan tee:** snug, but it bridges the cleavage and under-bust like real fabric.
+  - Red raglan shoulders; raglan, side and underarm seams with stitching.
+  - Rib collar band with a rolled edge, and double-needle hems at the bottom and sleeves.
+  - Sleeves end below the elbow, with clean stripes: red/red on her right, red/blue on her left.
+  - Horizontal tears with rolled frayed rims and hanging threads.
+  - "Daddy's Lil Monster" print: black script with a red drop shadow, set in Lobster (OFL, see `fonts/OFL.txt`).
+- **Shoulder holster harness:** stitched straps with silver slide adjusters and a back O-ring. A stitched holster with a welt, a retention strap with a snap, and a pistol grip under her left arm.
+- **Choker:** red leather with stitching, gold PUDDIN letters and a ring.
 - **Arms:**
-  - Her right: red/black harlequin diamond tattoo on the forearm and a purple wristband.
-  - Her left: spiked black bracelet, a purple band, and a fingerless black/red glove.
-- **Sneakers:** black and white high-tops with a padded collar, tongue, silver eyelets, criss-cross laces and a bow, toe-cap piping, a mudguard line, and a thick two-tone sole. No brand logos.
+  - Her right: harlequin diamond forearm tattoo and a purple stitched wristband with snaps.
+  - Her left: spiked black bracelet, a purple band, and a fingerless black glove with a raised red back panel, piping and a wrist strap with a snap.
 
 | File | What it is |
 |---|---|
@@ -25,5 +25,3 @@ Built on the Starter 2.0 Rig with `../toolkit/morph_toolkit.py`. No bat.
 | `build_harley.py` | Builds everything: `python build_harley.py <rig.blend> <out_dir>` (bpy 5.2) |
 | `render_harley.py` | Preview renders |
 | `previews/` | Renders |
-
-The soles reach about 0.06 studs below the original feet.

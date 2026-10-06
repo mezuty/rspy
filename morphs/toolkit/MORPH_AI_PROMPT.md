@@ -307,7 +307,13 @@ Design control points in 2D, smooth with `catmull()`, project, and
     - if an item has to be found with a zoomed-in camera to be noticed,
       it's too small. Check it in the full-body render.
 
-16. **Loose garments** (tees, hoodies, jackets): start from a shell, then make it
+16. **Fit: default to FITTED.** Users rejected a loose, boxy tee as "weird".
+    Use a fitted shell (offset ≈ 0.014 for thin fabric) that still behaves like
+    cloth: it **bridges** the cleavage (straight span between the two bust peaks
+    per height row, slight sag) and the **under-bust crease** (straight line per
+    vertical column from the bust apex down ~0.33), and smooths the navel. That's
+    what separates a garment from body paint. Only go loose when asked;
+    then: start from a shell and make it
     *hang*. Bin vertices by angle around the torso axis, take the max radius over
     the bust band (window-max ±10° so it bridges the cleavage), and push every
     vertex below the bust out to the max of (bust radius → hem radius,
@@ -317,13 +323,24 @@ Design control points in 2D, smooth with `catmull()`, project, and
     faces on one side of `z(angle)` and snap the boundary onto the curve. Then
     add a binding tube (rib collar, hem) placed **just inside** the cut. A ray
     aimed above a cut you made hits nothing.
-18. **Two-tone garments and stripes**: bisect the shell at the boundaries and
-    assign `material_index` by position (raglan red shoulders via a diagonal
+18. **Two-tone garments and stripes**: big color regions (raglan shoulders,
+    left/right splits): bisect the shell at the boundaries and assign
+    `material_index` by position, then **cover every color boundary with a
+    seam** (piping + stitches) so any unevenness disappears. **Thin stripes:
+    never** material-index them (the edge follows the mesh and looks
+    jagged/notched). Build each stripe as its own thin band: several rows of
+    radial ray hits across its height, lift ≈ 0.0012, thickness ≈ 0.0012.
+    Assign `material_index` by position (raglan red shoulders via a diagonal
     plane, a left/right color split at the RIGHT=0 plane, sleeve stripes via
     horizontal planes). Painted-in stripes look integrated; separate rings
     look like floating hoops. **Keep stripes away from joint overlaps**
     (elbow, knee), where the rig's parts step in and out.
-19. **Distressed holes**: delete faces inside noisy blobs
+19. **Distressed holes**: make them **horizontal tears** (ellipse rx ≈ 2.5×rz,
+    rx 0.06–0.1), delete faces inside, then **snap the boundary verts onto the
+    smooth noisy outline** (otherwise the grid gives blocky, pixelated holes),
+    add a rolled rim tube (r ≈ 0.0026) along the ordered boundary loop, a few
+    threads hanging *down* from the upper lip (gravity), and one sagging thread
+    spanning the gap. Older recipe: delete faces inside noisy blobs
     (`R·(1 + 0.28 sin3φ + 0.14 sin5φ + 0.07 sin9φ)`), jitter the boundary verts
     a few mm, and sprout short thin thread tubes into the hole from ~30% of
     the boundary verts. Make holes big enough to read (radius ≥ 0.04 on a
@@ -344,10 +361,29 @@ Design control points in 2D, smooth with `catmull()`, project, and
 22. **Wrists and ankles**: the rig's hand usually overlaps the forearm's end
     (likewise foot ↔ shin). Bands, tattoos and bracelets there must project
     onto **both** parts joined, or they sink inside the hand.
-23. **Tattoos, patches, decals**: small polygons projected onto the skin (or
-    the garment), subdivided, lifted ~1.5 mm, ~1 mm thick. Diamond grids in
+23. **Tattoos, patches, decals, glove panels**: build the polygon in the
+    projection's 2D space, triangulate + subdivide 3×, then project **every**
+    vertex (projecting only the corners leaves a flat plate that floats or
+    sinks on curved parts). Lift ~1.5–2 mm, ~1–4 mm thick. Raised panels get a
+    piping rim. Avoid glossy coats on small panels; a coat catching the key
+    light reads as a grey plate. Diamond grids in
     alternating colors make harlequin patterns.
-24. **Sneakers**: shell shaft (black) + foot (white, with a black heel counter
+24. **Garment construction sells clothing** the way piping sold leather: on a
+    tee, add raglan seams and side seams (thin same-color piping + tight
+    stitches, gap ≈ 0.008), a separate **rib collar band** that rises onto the
+    neck (ray against shirt + neck skin) with a rolled top edge and a stitch
+    line below, a **double-needle hem** (rolled fold tube + two dashed stitch
+    rings) at the bottom and the sleeve ends, an underarm sleeve seam, and a
+    stitched cap seam where the sleeve color changes.
+25. **Harness/straps over clothes**: ~0.045 wide, 0.008 thick ribbons with
+    bevel, edge stitching both sides, metal slide adjusters (a rounded-rect
+    frame wider than the strap, plus a bar) on the front, and an O-ring where
+    the straps meet at the back.
+26. **Fingerless gloves on mitten hands**: shell over the hand down to just
+    above the fingertips, a rolled edge at the finger opening, a raised colored
+    back panel with piping, and a wrist strap with a snap. Without those it
+    reads as a bracelet.
+27. **Sneakers**: shell shaft (black) + foot (white, with a black heel counter
     by face position), padded collar tube, tongue ribbon rising above the
     collar, silver eyelet rings in two columns, criss-cross lace tubes between
     them, a bow (two loops + two hanging ends), toe-cap piping, a mudguard
@@ -433,6 +469,10 @@ colored outfits, keep the same roughness/coat logic and vary the base color.
 | Ring/band sinks into the wrist | the hand overlaps the forearm end | project onto forearm + hand joined |
 | Stripes look like floating hoops | separate rings sitting on a joint step | paint stripes into the shell via bisect + material index, away from joints |
 | Ray for a trim hits nothing | aimed above/below a cut you made | aim just inside the remaining fabric |
+| Clothing looks "too loose / weird" | boxy drape | default to fitted shells that bridge the cleavage and under-bust |
+| Jagged/notched stripe edges | stripes made by material index on the mesh | separate thin band objects hugging the surface |
+| Blocky, pixelated holes | faces deleted on a grid | snap the boundary to the smooth outline, add a rim tube |
+| Flat plate floating on a curved part | only the patch corners projected | subdivide in 2D, project every vertex |
 | User's viewport looks low-quality | Material Preview uses Blender's HDRI; viewport subsurf < render | save studio lights + world in the file and set viewports to use them; viewport level = render level; darker stitches |
 
 ---
