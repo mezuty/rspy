@@ -507,14 +507,15 @@ def braid(name, path, strand_r, braid_r, period, mat, scale_fn=None, strands=3):
     return out
 
 
-def claw(name, base, direction, normal, mat, length=0.085, radius=0.02):
-    """Hooked tapered claw/spike/horn: ring sweep along a bent path."""
+def claw(name, base, direction, normal, mat, length=0.085, radius=0.02, hook=0.45):
+    """Hooked tapered claw/spike/horn: ring sweep along a bent path.
+    hook=0 gives a straight cone (studs, bracelet spikes)."""
     d = direction.normalized(); nrm = (normal - d * normal.dot(d)).normalized()
     bm = bmesh.new(); rings = []; seg = 10
     for i in range(11):
         f = i / 10
-        p = base + d * (length * f) - nrm * (length * 0.45 * f * f)
-        tang = (d - nrm * (0.9 * f)).normalized()
+        p = base + d * (length * f) - nrm * (length * hook * f * f)
+        tang = (d - nrm * (2 * hook * f)).normalized()
         nn = (nrm - tang * nrm.dot(tang)).normalized(); ss = tang.cross(nn)
         rad = radius * (1 - f) ** 0.8 + 0.0008
         rings.append([bm.verts.new(p + nn * math.cos(2 * math.pi * k / seg) * rad * 0.75

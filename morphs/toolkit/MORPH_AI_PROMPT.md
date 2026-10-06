@@ -307,6 +307,53 @@ Design control points in 2D, smooth with `catmull()`, project, and
     - if an item has to be found with a zoomed-in camera to be noticed,
       it's too small. Check it in the full-body render.
 
+16. **Loose garments** (tees, hoodies, jackets): start from a shell, then make it
+    *hang*. Bin vertices by angle around the torso axis, take the max radius over
+    the bust band (window-max ±10° so it bridges the cleavage), and push every
+    vertex below the bust out to the max of (bust radius → hem radius,
+    interpolated), capped at +0.075. Then relax lightly and add vertical drape
+    folds (ridges across RIGHT) on the front and back.
+17. **Necklines, hems, sleeve ends, shorts legs**: `cut_by_curve`. Delete
+    faces on one side of `z(angle)` and snap the boundary onto the curve. Then
+    add a binding tube (rib collar, hem) placed **just inside** the cut. A ray
+    aimed above a cut you made hits nothing.
+18. **Two-tone garments and stripes**: bisect the shell at the boundaries and
+    assign `material_index` by position (raglan red shoulders via a diagonal
+    plane, a left/right color split at the RIGHT=0 plane, sleeve stripes via
+    horizontal planes). Painted-in stripes look integrated; separate rings
+    look like floating hoops. **Keep stripes away from joint overlaps**
+    (elbow, knee), where the rig's parts step in and out.
+19. **Distressed holes**: delete faces inside noisy blobs
+    (`R·(1 + 0.28 sin3φ + 0.14 sin5φ + 0.07 sin9φ)`), jitter the boundary verts
+    a few mm, and sprout short thin thread tubes into the hole from ~30% of
+    the boundary verts. Make holes big enough to read (radius ≥ 0.04 on a
+    1.1-wide torso) or they look like stains.
+20. **Printed text / logos**: create a FONT curve (`bpy.data.fonts.load` a .ttf;
+    OFL fonts like Lobster are fine to bundle), convert it to a mesh,
+    triangulate and subdivide twice, then project **every vertex** onto the
+    surface and solidify thin. **Seen from the front, the viewer's right is
+    the character's left**: map text x → −RIGHT (`s0 - x`), or increasing angle
+    in `cyl` mode, or the text comes out mirrored. For an outline or shadow,
+    use a second copy shifted down-left in a contrasting color; a curve
+    `offset` outline spikes at sharp glyph corners.
+21. **Fishnet / mesh / chain-link**: a staggered diamond lattice (rows offset
+    half a cell, row height = π·r/N for square diamonds) ray-cast around the
+    limb, quads per diamond, then a Wireframe modifier (thickness ~0.003). That
+    gives real holes showing the skin, no texture needed. Split it at the knee
+    so each half follows its own part.
+22. **Wrists and ankles**: the rig's hand usually overlaps the forearm's end
+    (likewise foot ↔ shin). Bands, tattoos and bracelets there must project
+    onto **both** parts joined, or they sink inside the hand.
+23. **Tattoos, patches, decals**: small polygons projected onto the skin (or
+    the garment), subdivided, lifted ~1.5 mm, ~1 mm thick. Diamond grids in
+    alternating colors make harlequin patterns.
+24. **Sneakers**: shell shaft (black) + foot (white, with a black heel counter
+    by face position), padded collar tube, tongue ribbon rising above the
+    collar, silver eyelet rings in two columns, criss-cross lace tubes between
+    them, a bow (two loops + two hanging ends), toe-cap piping, a mudguard
+    line, a thick midsole slab plus a thin outsole slab and stripe. Leave out
+    brand logos.
+
 ---
 
 ## 7. MATERIALS (Principled BSDF)
@@ -381,6 +428,11 @@ colored outfits, keep the same roughness/coat logic and vary the base color.
 | Glove looks lumpy | folds on a small curvy part | remove folds there |
 | Accessory "looks like a keychain" | real-world proportions | follow the scale rules in §6.15 |
 | Whip hidden / reads as a key ring | placed where the arm covers it, too small, flat on a curved hip | offset it from the surface, make it bigger, tight multi-loop bundle with braided strands |
+| Projected text reads backwards | text x mapped to +RIGHT | map x → −RIGHT (viewer's right is the character's left) |
+| Spikes/ticks around lettering | curve `offset` outline | use a shifted shadow copy instead |
+| Ring/band sinks into the wrist | the hand overlaps the forearm end | project onto forearm + hand joined |
+| Stripes look like floating hoops | separate rings sitting on a joint step | paint stripes into the shell via bisect + material index, away from joints |
+| Ray for a trim hits nothing | aimed above/below a cut you made | aim just inside the remaining fabric |
 | User's viewport looks low-quality | Material Preview uses Blender's HDRI; viewport subsurf < render | save studio lights + world in the file and set viewports to use them; viewport level = render level; darker stitches |
 
 ---
@@ -1047,14 +1099,15 @@ def braid(name, path, strand_r, braid_r, period, mat, scale_fn=None, strands=3):
     return out
 
 
-def claw(name, base, direction, normal, mat, length=0.085, radius=0.02):
-    """Hooked tapered claw/spike/horn: ring sweep along a bent path."""
+def claw(name, base, direction, normal, mat, length=0.085, radius=0.02, hook=0.45):
+    """Hooked tapered claw/spike/horn: ring sweep along a bent path.
+    hook=0 gives a straight cone (studs, bracelet spikes)."""
     d = direction.normalized(); nrm = (normal - d * normal.dot(d)).normalized()
     bm = bmesh.new(); rings = []; seg = 10
     for i in range(11):
         f = i / 10
-        p = base + d * (length * f) - nrm * (length * 0.45 * f * f)
-        tang = (d - nrm * (0.9 * f)).normalized()
+        p = base + d * (length * f) - nrm * (length * hook * f * f)
+        tang = (d - nrm * (2 * hook * f)).normalized()
         nn = (nrm - tang * nrm.dot(tang)).normalized(); ss = tang.cross(nn)
         rad = radius * (1 - f) ** 0.8 + 0.0008
         rings.append([bm.verts.new(p + nn * math.cos(2 * math.pi * k / seg) * rad * 0.75
