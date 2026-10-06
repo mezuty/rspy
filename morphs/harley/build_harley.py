@@ -221,6 +221,7 @@ def raw_bvh(part, off=0.0, level=1):
 
 # =========================================================== 1. FITTED T-SHIRT
 BUILD_LOWER = True       # lower body: shorts, belt, fishnets, sneakers
+BUILD_HARNESS = False    # shoulder-holster harness + holster (removed at the user's request)
 TEE_OFF = 0.014
 shirt = mt.world_copy(PARTS['torso'], 'HQ_Shirt_Torso', level=2)
 mt.offset_shell(shirt, TEE_OFF)
@@ -322,7 +323,8 @@ for p in shirt.data.polygons:
 mt.smooth(shirt)
 
 # --- horizontal tears with rolled frayed edges and hanging threads
-TEARS = [('front', 0.25, 3.2, 0.075, 0.03, 8), ('front', -0.15, 2.66, 0.1, 0.038, -6),
+# keep rips well clear of the chest print (one just under it read as a defect)
+TEARS = [('front', -0.15, 2.66, 0.1, 0.038, -6),
          ('front', 0.13, 2.52, 0.07, 0.027, 4), ('front', -0.3, 3.0, 0.06, 0.026, -10),
          ('back', 0.16, 3.0, 0.09, 0.034, 6), ('back', -0.2, 2.62, 0.07, 0.028, -5)]
 TPH = [(random.uniform(0, 6), random.uniform(0, 6), random.uniform(0, 6)) for _ in TEARS]
@@ -543,86 +545,87 @@ for side, s in SIDES:
     add(f'upperarm_{side}', ua); add(f'lowerarm_{side}', la)
 
 # =========================================================== 2. SHOULDER HOLSTER HARNESS
-M_HARNESS_ST = mt.principled('HQ_Harness_Stitch', (0.2, 0.2, 0.21), 0.6)
-STRAP_W = 0.046
+if BUILD_HARNESS:
+    M_HARNESS_ST = mt.principled('HQ_Harness_Stitch', (0.2, 0.2, 0.21), 0.6)
+    STRAP_W = 0.046
 
 
-def strap_ribbon(name, path, group):
-    path = mt.resample(path, 0.008)
-    ob = mt.ribbon(name, path, STRAP_W, 0.005, 0.008, M_LEATHER)
-    mt.add_bevel(ob, 0.0025, 2)
-    bm = bmesh.new(); rs = mt.resample(path, 0.02)
-    for i in range(1, len(rs) - 1):
-        co, n = rs[i]
-        t, b, n = mt.frame_at(co, n, (rs[i + 1][0] - rs[i - 1][0]).normalized())
-        for sg in (-1, 1):
-            mt.box(bm, co + n * 0.0135 + b * sg * (STRAP_W / 2 - 0.007), t, b, n, 0.006, 0.0011, 0.0011)
-    add(group, ob, mt.mesh_obj(name + '_Stitch', bm, M_HARNESS_ST))
-    return path
+    def strap_ribbon(name, path, group):
+        path = mt.resample(path, 0.008)
+        ob = mt.ribbon(name, path, STRAP_W, 0.005, 0.008, M_LEATHER)
+        mt.add_bevel(ob, 0.0025, 2)
+        bm = bmesh.new(); rs = mt.resample(path, 0.02)
+        for i in range(1, len(rs) - 1):
+            co, n = rs[i]
+            t, b, n = mt.frame_at(co, n, (rs[i + 1][0] - rs[i - 1][0]).normalized())
+            for sg in (-1, 1):
+                mt.box(bm, co + n * 0.0135 + b * sg * (STRAP_W / 2 - 0.007), t, b, n, 0.006, 0.0011, 0.0011)
+        add(group, ob, mt.mesh_obj(name + '_Stitch', bm, M_HARNESS_ST))
+        return path
 
 
-back_ring_co, back_ring_n = mt.project(SB, [(0, 3.12)], 'back')[0]
-for s in (-1, 1):
-    front = mt.project(SB, mt.catmull([(s * 0.475, 3.26), (s * 0.41, 3.44), (s * 0.345, 3.6)], 30), 'front')
-    top = mt.project(SB, mt.catmull([(s * 0.345, 0.12), (s * 0.35, -0.05), (s * 0.345, -0.22)], 20), 'top')
-    back = mt.project(SB, mt.catmull([(s * 0.345, 3.6), (s * 0.2, 3.33), (s * 0.035, 3.135)], 30), 'back')
-    path = strap_ribbon(f'HQ_Harness{s}', front + top + back, 'torso')
-    # slide adjuster on the front of the strap
-    i = len(front) // 2
-    co, n = front[i]
-    t, b, n = mt.frame_at(co, n, (front[i + 1][0] - front[i - 1][0]).normalized())
-    c = co + n * 0.017
-    add('torso', mt.tube(f'HQ_HarnessSlide{s}', mt.rounded_rect(c, b, t, STRAP_W / 2 + 0.007, 0.013, k=0.4, n=40),
-                         0.0042, M_SILVER))
-    add('torso', mt.tube(f'HQ_HarnessSlideBar{s}', [c - b * (STRAP_W / 2 + 0.007), c + b * (STRAP_W / 2 + 0.007)],
-                         0.0032, M_SILVER))
-t, b, n = mt.frame_at(back_ring_co, back_ring_n, UP)
-rc = back_ring_co + n * 0.017
-add('torso', mt.tube('HQ_HarnessRing', [rc + (t * math.cos(a) + b * math.sin(a)) * 0.032
-                                        for a in [2 * math.pi * i / 40 for i in range(41)]], 0.0075, M_SILVER))
+    back_ring_co, back_ring_n = mt.project(SB, [(0, 3.12)], 'back')[0]
+    for s in (-1, 1):
+        front = mt.project(SB, mt.catmull([(s * 0.475, 3.26), (s * 0.41, 3.44), (s * 0.345, 3.6)], 30), 'front')
+        top = mt.project(SB, mt.catmull([(s * 0.345, 0.12), (s * 0.35, -0.05), (s * 0.345, -0.22)], 20), 'top')
+        back = mt.project(SB, mt.catmull([(s * 0.345, 3.6), (s * 0.2, 3.33), (s * 0.035, 3.135)], 30), 'back')
+        path = strap_ribbon(f'HQ_Harness{s}', front + top + back, 'torso')
+        # slide adjuster on the front of the strap
+        i = len(front) // 2
+        co, n = front[i]
+        t, b, n = mt.frame_at(co, n, (front[i + 1][0] - front[i - 1][0]).normalized())
+        c = co + n * 0.017
+        add('torso', mt.tube(f'HQ_HarnessSlide{s}', mt.rounded_rect(c, b, t, STRAP_W / 2 + 0.007, 0.013, k=0.4, n=40),
+                             0.0042, M_SILVER))
+        add('torso', mt.tube(f'HQ_HarnessSlideBar{s}', [c - b * (STRAP_W / 2 + 0.007), c + b * (STRAP_W / 2 + 0.007)],
+                             0.0032, M_SILVER))
+    t, b, n = mt.frame_at(back_ring_co, back_ring_n, UP)
+    rc = back_ring_co + n * 0.017
+    add('torso', mt.tube('HQ_HarnessRing', [rc + (t * math.cos(a) + b * math.sin(a)) * 0.032
+                                            for a in [2 * math.pi * i / 40 for i in range(41)]], 0.0075, M_SILVER))
 
-# holster under her left arm
-HA = 183
-hd = side_dir(HA)
-hit = mt.outer_hit([SB], Vector((0, 0, 2.95)) + hd * 5, -hd)
-hn = hd; hu = UP; ht = hu.cross(hn).normalized()
-hc = hit[0] + hn * 0.045
-outline = []
-for i in range(40):
-    u = 2 * math.pi * i / 40
-    cx, cz = math.cos(u), math.sin(u)
-    w = 0.058 + 0.016 * (cz + 1) / 2                       # wider at the top
-    outline.append((math.copysign(abs(cx) ** 0.5, cx) * w, math.copysign(abs(cz) ** 0.6, cz) * 0.15))
-bm = bmesh.new()
-fr = [bm.verts.new(hc + ht * x + hu * z + hn * 0.024) for x, z in outline]
-bk = [bm.verts.new(hc + ht * x * 0.92 + hu * z - hn * 0.024) for x, z in outline]
-bm.faces.new(fr); bm.faces.new(bk[::-1])
-for i in range(40):
-    j = (i + 1) % 40; bm.faces.new((bk[i], bk[j], fr[j], fr[i]))
-bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
-hol = mt.mesh_obj('HQ_Holster', bm, M_LEATHER); mt.add_bevel(hol, 0.012, 4); mt.smooth(hol)
-add('torso', hol)
-edge = [hc + ht * x * 0.86 + hu * z * 0.93 + hn * 0.0255 for x, z in outline] 
-add('torso', mt.tube('HQ_Holster_Welt', edge + [edge[0]], 0.0035, M_LEATHER))
-bm = bmesh.new()
-for i, (x, z) in enumerate(outline[::2]):
-    p = hc + ht * x * 0.78 + hu * z * 0.86 + hn * 0.0262
-    mt.box(bm, p, ht, hu, hn, 0.0035, 0.0035, 0.001)
-add('torso', mt.mesh_obj('HQ_Holster_Stitch', bm, M_HARNESS_ST))
-# pistol grip + retention strap with snap
-gc = hc + hu * 0.19 + ht * 0.012
-bm = bmesh.new(); mt.box(bm, gc, (ht + hu * 0.25).normalized(), hu, hn, 0.032, 0.06, 0.019)
-grip = mt.mesh_obj('HQ_PistolGrip', bm, M_GUN); mt.add_bevel(grip, 0.012, 3); add('torso', grip)
-for sg in (-1, 1):
-    bm = bmesh.new(); mt.box(bm, gc + hn * sg * 0.02, (ht + hu * 0.25).normalized(), hu, hn, 0.024, 0.045, 0.002)
-    add('torso', mt.mesh_obj(f'HQ_GripPanel{sg}', bm, M_LEATHER))
-strap_pts = [(hc + hu * 0.165 + hn * z + ht * 0.0, hn) for z in (-0.03, 0.0, 0.035)]
-ret = [hc + hu * 0.16 - hn * 0.03, hc + hu * 0.2 - hn * 0.02, hc + hu * 0.215 + hn * 0.0, hc + hu * 0.2 + hn * 0.026,
-       hc + hu * 0.15 + hn * 0.03]
-add('torso', mt.tube('HQ_Holster_Retention', ret, 0.008, M_LEATHER))
-add('torso', mt.tube('HQ_Holster_Snap', [hc + hu * 0.15 + hn * 0.036, hc + hu * 0.15 + hn * 0.044], 0.009, M_SILVER))
-drop = mt.project(SB, mt.catmull([(181, 3.27), (182, 3.17), (183, 3.12)], 12), 'cyl')
-strap_ribbon('HQ_HolsterDrop', drop + [(hc + hu * 0.15 + hn * 0.0, hn)], 'torso')
+    # holster under her left arm
+    HA = 183
+    hd = side_dir(HA)
+    hit = mt.outer_hit([SB], Vector((0, 0, 2.95)) + hd * 5, -hd)
+    hn = hd; hu = UP; ht = hu.cross(hn).normalized()
+    hc = hit[0] + hn * 0.045
+    outline = []
+    for i in range(40):
+        u = 2 * math.pi * i / 40
+        cx, cz = math.cos(u), math.sin(u)
+        w = 0.058 + 0.016 * (cz + 1) / 2                       # wider at the top
+        outline.append((math.copysign(abs(cx) ** 0.5, cx) * w, math.copysign(abs(cz) ** 0.6, cz) * 0.15))
+    bm = bmesh.new()
+    fr = [bm.verts.new(hc + ht * x + hu * z + hn * 0.024) for x, z in outline]
+    bk = [bm.verts.new(hc + ht * x * 0.92 + hu * z - hn * 0.024) for x, z in outline]
+    bm.faces.new(fr); bm.faces.new(bk[::-1])
+    for i in range(40):
+        j = (i + 1) % 40; bm.faces.new((bk[i], bk[j], fr[j], fr[i]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    hol = mt.mesh_obj('HQ_Holster', bm, M_LEATHER); mt.add_bevel(hol, 0.012, 4); mt.smooth(hol)
+    add('torso', hol)
+    edge = [hc + ht * x * 0.86 + hu * z * 0.93 + hn * 0.0255 for x, z in outline] 
+    add('torso', mt.tube('HQ_Holster_Welt', edge + [edge[0]], 0.0035, M_LEATHER))
+    bm = bmesh.new()
+    for i, (x, z) in enumerate(outline[::2]):
+        p = hc + ht * x * 0.78 + hu * z * 0.86 + hn * 0.0262
+        mt.box(bm, p, ht, hu, hn, 0.0035, 0.0035, 0.001)
+    add('torso', mt.mesh_obj('HQ_Holster_Stitch', bm, M_HARNESS_ST))
+    # pistol grip + retention strap with snap
+    gc = hc + hu * 0.19 + ht * 0.012
+    bm = bmesh.new(); mt.box(bm, gc, (ht + hu * 0.25).normalized(), hu, hn, 0.032, 0.06, 0.019)
+    grip = mt.mesh_obj('HQ_PistolGrip', bm, M_GUN); mt.add_bevel(grip, 0.012, 3); add('torso', grip)
+    for sg in (-1, 1):
+        bm = bmesh.new(); mt.box(bm, gc + hn * sg * 0.02, (ht + hu * 0.25).normalized(), hu, hn, 0.024, 0.045, 0.002)
+        add('torso', mt.mesh_obj(f'HQ_GripPanel{sg}', bm, M_LEATHER))
+    strap_pts = [(hc + hu * 0.165 + hn * z + ht * 0.0, hn) for z in (-0.03, 0.0, 0.035)]
+    ret = [hc + hu * 0.16 - hn * 0.03, hc + hu * 0.2 - hn * 0.02, hc + hu * 0.215 + hn * 0.0, hc + hu * 0.2 + hn * 0.026,
+           hc + hu * 0.15 + hn * 0.03]
+    add('torso', mt.tube('HQ_Holster_Retention', ret, 0.008, M_LEATHER))
+    add('torso', mt.tube('HQ_Holster_Snap', [hc + hu * 0.15 + hn * 0.036, hc + hu * 0.15 + hn * 0.044], 0.009, M_SILVER))
+    drop = mt.project(SB, mt.catmull([(181, 3.27), (182, 3.17), (183, 3.12)], 12), 'cyl')
+    strap_ribbon('HQ_HolsterDrop', drop + [(hc + hu * 0.15 + hn * 0.0, hn)], 'torso')
 
 # =========================================================== 3. CHOKER "PUDDIN"
 CH_Z = 3.682
@@ -1063,6 +1066,13 @@ for group, obs in GROUPS.items():
             mt.parent_to_part(ob, PARTS[group])
 stray = [o.name for o in mt.COLL.objects if o.parent is None]
 print('unparented:', stray)
+# automated QA: every opening in the tee must be one we cut on purpose
+exp = [(0, -0.05, 3.63), (0, 0, HEM)]
+for side, s0, z0, *_ in TEARS:
+    sv = s0                       # tear_local mirrors s for back tears, so world x == s0
+    f_ = 0.27 if side == 'front' else -0.26
+    exp.append(tuple(RT * sv + F * f_ + Vector((0, 0, z0))))
+mt.qa_report({'HQ_Shirt_Torso': exp}, ground_z=0.0)
 
 mt.add_studio_look()
 os.makedirs(OUT, exist_ok=True)

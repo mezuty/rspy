@@ -5,13 +5,12 @@ Built on the Starter 2.0 Rig with `../toolkit/morph_toolkit.py`. No bat.
 Full outfit: top (torso, arms, hands) and lower body (shorts, belt, fishnets,
 sneakers). `previews/` holds quick low-res checks.
 
-- **Fitted raglan tee:** snug, but it bridges the cleavage and under-bust like real fabric.
+- **Fitted raglan tee** (no rip under the print): snug, but it bridges the cleavage and under-bust like real fabric.
   - Red raglan shoulders; raglan, side and underarm seams with stitching.
   - Rib collar band with a rolled edge, and double-needle hems at the bottom and sleeves.
   - Sleeves end below the elbow, with clean stripes: red/red on her right, red/blue on her left.
   - Horizontal tears with rolled frayed rims and hanging threads.
   - "Daddy's Lil Monster" print: black script with a red drop shadow, set in Lobster (OFL, see `fonts/OFL.txt`).
-- **Shoulder holster harness:** stitched straps with silver slide adjusters and a back O-ring. A stitched holster with a welt, a retention strap with a snap, and a pistol grip under her left arm.
 - **Choker:** red leather with stitching, gold PUDDIN letters and a ring.
 - **Arms:**
   - Her right: harlequin diamond forearm tattoo and a purple stitched wristband with snaps.

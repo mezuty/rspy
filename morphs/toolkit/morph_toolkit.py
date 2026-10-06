@@ -640,6 +640,58 @@ def save_deliverables(out_dir, base_name):
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, base_name + '_PiecesOnly.blend'), compress=True)
 
 
+def qa_report(expected_openings=None, ground_z=None, far=12.0):
+    """Automated checks before showing the user anything. Prints and returns a
+    list of problems:
+      * pieces with no parent (won't follow the rig);
+      * leftover temporary objects (names starting with '_');
+      * open boundary loops on each mesh that aren't in expected_openings
+        (a dict {object_name: [(x, y, z), ...]} of loop centres you meant to
+        cut: necklines, hems, tears...). Catches accidental holes;
+      * geometry far below ground_z (soles are expected slightly below);
+      * stray geometry far from the rig (failed ray casts dump points at origin
+        or 5 units out)."""
+    problems = []
+    expected_openings = expected_openings or {}
+    for ob in COLL.objects:
+        if ob.parent is None:
+            problems.append(f'unparented: {ob.name}')
+    for ob in bpy.data.objects:
+        if ob.name.startswith('_') and ob.type == 'MESH':
+            problems.append(f'temporary object left behind: {ob.name}')
+    dg = bpy.context.evaluated_depsgraph_get()
+    for ob in COLL.objects:
+        if ob.type != 'MESH': continue
+        bm = bmesh.new(); bm.from_mesh(ob.data); bm.transform(ob.matrix_world)
+        if ground_z is not None or far:
+            for v in bm.verts:
+                if ground_z is not None and v.co.z < ground_z - 0.1:
+                    problems.append(f'{ob.name}: geometry far below ground (z={v.co.z:.2f})'); break
+                if far and (abs(v.co.x) > far or abs(v.co.y) > far):
+                    problems.append(f'{ob.name}: stray geometry at {tuple(round(c, 2) for c in v.co)}'); break
+        if ob.name in expected_openings or any(m.type in ('SOLIDIFY', 'SUBSURF') for m in ob.modifiers):
+            adj = {}
+            for e in bm.edges:
+                if e.is_boundary:
+                    a, b = e.verts
+                    adj.setdefault(a, []).append(b); adj.setdefault(b, []).append(a)
+            seen = set()
+            for v in adj:
+                if v in seen: continue
+                stack, comp = [v], []
+                while stack:
+                    x = stack.pop()
+                    if x in seen: continue
+                    seen.add(x); comp.append(x); stack += adj[x]
+                c = sum((x.co for x in comp), Vector()) / len(comp)
+                exp = expected_openings.get(ob.name)
+                if exp is not None and not any((c - Vector(e)).length < 0.08 for e in exp):
+                    problems.append(f'{ob.name}: unexpected opening near {tuple(round(q, 3) for q in c)} ({len(comp)} verts)')
+        bm.free()
+    print('QA:', 'OK' if not problems else '\n  ' + '\n  '.join(problems))
+    return problems
+
+
 ATTACH_SCRIPT = '''import bpy
 # Run in Blender's Text Editor after appending the morph collection.
 COLL_NAME = "{coll}"

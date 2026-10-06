@@ -10,7 +10,7 @@ import bpy
 from mathutils import Vector
 import morph_toolkit as mt
 
-RIG, OUT = sys.argv[-2], sys.argv[-1]
+RIG, OUT = sys.argv[-2], sys.argv[-1]   # works for `python x.py a b` and `blender -b --python x.py -- a b`
 bpy.ops.wm.open_mainfile(filepath=RIG)
 
 # 1. map rig parts (fill this in from mt.survey_rig() output - names differ per rig)
@@ -94,6 +94,7 @@ mt.render_view(os.path.join(OUT, 'example_front.png'), mt.FRONT * 7.5 + Vector((
                (0, 0, 2.7), lens=55, samples=24)
 mt.render_view(os.path.join(OUT, 'example_side.png'), mt.RIGHT * 6 + mt.FRONT * 2 + Vector((0, 0, 2.6)),
                (0, 0, 2.4), lens=55, samples=24)
+mt.qa_report(ground_z=0.0)   # fix everything it prints before showing the user
 mt.add_studio_look()   # restore EEVEE + viewport settings after Cycles renders
 mt.save_deliverables(OUT, 'Example_Morph')
 print('DONE')
