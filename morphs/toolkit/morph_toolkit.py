@@ -201,6 +201,25 @@ def smooth_region(ob, weight_fn, iters=60):
     bm.to_mesh(ob.data); bm.free()
 
 
+def fill_pits(ob, weight_fn, push_dir, iters=60):
+    """Fill-only relax: move vertices toward their neighbours' average but
+    only OUTWARD along push_dir. Removes pits and grooves where fabric should
+    span a gap (top of the cleavage, small body dents) without the shrinkage a
+    normal Laplacian smooth causes (which re-digs the groove you just bridged)."""
+    d = Vector(push_dir).normalized()
+    bm = bmesh.new(); bm.from_mesh(ob.data)
+    for _ in range(iters):
+        moves = {}
+        for v in bm.verts:
+            w = weight_fn(v.co)
+            if w <= 0 or not v.link_edges: continue
+            avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
+            gain = (avg - v.co).dot(d)
+            if gain > 0: moves[v] = d * gain * 0.6 * w
+        for v, m in moves.items(): v.co += m
+    bm.to_mesh(ob.data); bm.free()
+
+
 def add_folds(ob, center, radii, axis, amp, wavelength, face_dir=None, min_dot=0.0, sharp=1.6,
               wobble=0.12):
     """Stylized cloth folds: soft ridges across `axis` inside an ellipsoid

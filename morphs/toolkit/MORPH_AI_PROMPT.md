@@ -376,7 +376,12 @@ Design control points in 2D, smooth with `catmull()`, project, and
     Use a fitted shell (offset ≈ 0.014 for thin fabric) that still behaves like
     cloth: it **bridges** the cleavage (straight span between the two bust peaks
     per height row, slight sag) and the **under-bust crease** (straight line per
-    vertical column from the bust apex down ~0.33), and smooths the navel. That's
+    vertical column from the bust apex down ~0.33), and smooths the navel.
+    **Fade the cleavage bridge out slowly** (over ~0.12 above the bust): a short
+    fade leaves a pit at the top of the cleavage that renders as a dark "hole"
+    right under a chest print. Then run `fill_pits` (fill-only relax along FRONT)
+    over the centre front. A normal Laplacian smooth re-digs the groove, because
+    smoothing shrinks surfaces. That's
     what separates a garment from body paint. Only go loose when asked;
     then: start from a shell and make it
     *hang*. Bin vertices by angle around the torso axis, take the max radius over
@@ -508,6 +513,12 @@ colored outfits, keep the same roughness/coat logic and vary the base color.
     arms cover the hip sides; move things or accept it if the user does.)
   - Does it match the reference's key features?
   - Is it consistent left/right?
+- **When the user reports a spot ("a hole", "a dent", "a dark mark")**: first
+  run `qa_report` (real openings), then **sample the surface numerically**:
+  ray cast a small grid (e.g. 7 columns × 16 rows across the area, ignoring
+  decals) and print the depth along FRONT. A pit or groove shows as a value
+  lower than its neighbours. Fix, re-sample until the profile is smooth and
+  monotonic, then confirm with one close-up render.
 - **Debug by isolation and measurement, never by guessing:**
   - render with only one object visible (`hide_render` the rest);
   - `scene.ray_cast` from a point and list every object it hits, to find what's
@@ -546,6 +557,7 @@ colored outfits, keep the same roughness/coat logic and vary the base color.
 | Jagged/notched stripe edges | stripes made by material index on the mesh | separate thin band objects hugging the surface |
 | Blocky, pixelated holes | faces deleted on a grid | snap the boundary to the smooth outline, add a rim tube |
 | Flat plate floating on a curved part | only the patch corners projected | subdivide in 2D, project every vertex |
+| Dark "hole" under the chest print persists after removing rips | pit where the cleavage bridge fades out, re-dug by Laplacian smoothing | longer fade + `fill_pits`; verify with a depth-sample grid |
 | User reports "a hole" in the shirt | an intentional rip sitting right under the chest print | keep distressing away from prints and focal graphics; run `qa_report` to tell intended openings from real holes |
 | User wants an accessory gone | unrequested prop (holster harness) built from the reference | offer props first; put each behind a `BUILD_*` flag |
 | Expected-openings check misfires | mirrored coordinates (back-of-body tears use a mirrored s) | compute expected centres the same way the cut code does |
@@ -911,6 +923,25 @@ def smooth_region(ob, weight_fn, iters=60):
             avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
             new[v] = v.co.lerp(avg, 0.5 * w)
         for v, c in new.items(): v.co = c
+    bm.to_mesh(ob.data); bm.free()
+
+
+def fill_pits(ob, weight_fn, push_dir, iters=60):
+    """Fill-only relax: move vertices toward their neighbours' average but
+    only OUTWARD along push_dir. Removes pits and grooves where fabric should
+    span a gap (top of the cleavage, small body dents) without the shrinkage a
+    normal Laplacian smooth causes (which re-digs the groove you just bridged)."""
+    d = Vector(push_dir).normalized()
+    bm = bmesh.new(); bm.from_mesh(ob.data)
+    for _ in range(iters):
+        moves = {}
+        for v in bm.verts:
+            w = weight_fn(v.co)
+            if w <= 0 or not v.link_edges: continue
+            avg = sum((e.other_vert(v).co for e in v.link_edges), Vector()) / len(v.link_edges)
+            gain = (avg - v.co).dot(d)
+            if gain > 0: moves[v] = d * gain * 0.6 * w
+        for v, m in moves.items(): v.co += m
     bm.to_mesh(ob.data); bm.free()
 
 

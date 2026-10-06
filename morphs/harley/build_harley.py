@@ -261,7 +261,7 @@ def bridge_fabric(ob):
     rows = {}
     for v in vs:
         s, f = fs(v.co)
-        if abs(s) < 0.2 and 2.95 < v.co.z < 3.36:
+        if abs(s) < 0.2 and 2.95 < v.co.z < 3.44:
             rows.setdefault(int(round(v.co.z / 0.01)), []).append(v)
     for k, rv in rows.items():
         L = [v for v in rv if -0.2 < fs(v.co)[0] < -0.1]; Rr = [v for v in rv if 0.1 < fs(v.co)[0] < 0.2]
@@ -269,7 +269,7 @@ def bridge_fabric(ob):
         pl = max(L, key=lambda v: v.co.dot(F)); pr = max(Rr, key=lambda v: v.co.dot(F))
         sl, fl = fs(pl.co); sr, fr = fs(pr.co)
         z = k * 0.01
-        fade = min(1.0, (3.36 - z) / 0.08)
+        fade = max(0.0, min(1.0, (3.44 - z) / 0.12))   # long fade: a short one left a pit
         for v in rv:
             s, f = fs(v.co)
             if sl < s < sr:
@@ -280,6 +280,9 @@ def bridge_fabric(ob):
 
 
 bridge_fabric(shirt)
+# fill (never dig) the centre-front where the cleavage bridge fades out: no pits under the print
+mt.fill_pits(shirt, lambda c: (max(0.0, 1 - abs(c.dot(RT)) / 0.16) * max(0.0, 1 - abs(c.z - 3.28) / 0.14)
+                               if c.dot(F) > 0.1 else 0.0), F, 60)
 mt.smooth_region(shirt, lambda c: 0.5 if (c.dot(F) > 0.05 and 2.7 < c.z < 3.4 and abs(c.dot(RT)) < 0.38) else 0.0, 6)
 
 

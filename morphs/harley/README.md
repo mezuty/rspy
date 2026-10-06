@@ -16,8 +16,6 @@ sneakers). `previews/` holds quick low-res checks.
   - Her right: harlequin diamond forearm tattoo and a purple stitched wristband with snaps.
   - Her left: spiked black bracelet, a purple band, and a fingerless black glove with a raised red back panel, piping and a wrist strap with a snap.
 
-| File | What it is |
-|---|---|
 - **Sequin hot pants:** fitted, red on her right and blue on her left.
   - Waistband, belt loops, and a stitched center seam over the color split.
   - Fly stitching, curved front pocket seams, stitched back patch pockets, side seams.
@@ -32,6 +30,8 @@ sneakers). `previews/` holds quick low-res checks.
 
 The soles reach about 0.06 studs below the original feet.
 
+| File | What it is |
+|---|---|
 | `HarleyQuinn_Morph.blend` | Rig with the morph on it (collection **Harley Quinn Morph**), studio lights, viewport set to Material Preview with scene lights |
 | `HarleyQuinn_Morph_PiecesOnly.blend` | Only the morph pieces, to append into your own rig file |
 | `attach_to_rig.py` | After appending, run it in Blender's Text Editor to parent each piece to its body part |
