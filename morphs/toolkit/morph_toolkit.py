@@ -673,6 +673,30 @@ def patch(name, bvh, poly2d, lift, thick, mat, mode='cyl', center=(0, 0), subdiv
     return ob
 
 
+def boundary_loops(ob, pred=None):
+    """Ordered open-boundary loops of a mesh (world space) as lists of
+    (co, normal), optionally only edges whose verts satisfy pred(co). Use it to
+    run trims/piping exactly along cut edges (leg openings, tears...)."""
+    bm = bmesh.new(); bm.from_mesh(ob.data); bm.transform(ob.matrix_world); bm.normal_update()
+    edges = [e for e in bm.edges if e.is_boundary and (pred is None or (pred(e.verts[0].co) and pred(e.verts[1].co)))]
+    adj = {}
+    for e in edges:
+        a, b = e.verts
+        adj.setdefault(a.index, []).append(b.index); adj.setdefault(b.index, []).append(a.index)
+    co = {v.index: v.co.copy() for v in bm.verts}; nrm = {v.index: v.normal.copy() for v in bm.verts}
+    bm.free()
+    loops, seen = [], set()
+    for start in adj:
+        if start in seen: continue
+        loop = [start]; seen.add(start); prev, cur = None, start
+        while True:
+            nxt = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxt: break
+            prev, cur = cur, nxt[0]; loop.append(cur); seen.add(cur)
+        if len(loop) > 4: loops.append([(co[i], nrm[i]) for i in loop])
+    return loops
+
+
 def bvh_union(objs):
     """One BVH over several meshes (e.g. forearm + hand: the hand overlaps the
     wrist, so anything at the wrist must project onto both)."""

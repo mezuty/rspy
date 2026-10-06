@@ -481,6 +481,23 @@ Design control points in 2D, smooth with `catmull()`, project, and
     - **Leaf appliqués that rise above a garment edge** (Poison Ivy's leaf cups):
       project onto a *proxy* surface (the body part offset to the garment's outer
       level), not onto skin + garment, or the appliqué kinks at the edge.
+    - **Leg/arm vines: project onto the limb only.** Including a neighbouring
+      garment (the leotard) in the BVH lets the vine jump onto it, e.g. across
+      the crotch. Match the reference's *visible* path: shape the angle/height
+      curve so the long diagonal crosses the **front** (outer hip → inner thigh)
+      and the wrap-around happens at the back. A constant-rate spiral hides half
+      the vine.
+    - **Thorny vines**: a darker brown-purple tube, hooked thorns (`claw`,
+      hook ≈ 0.25, length ≈ 0.03) every few samples on alternating sides, and
+      ivy-leaf clusters of 3.
+    - **Leaf-topped boots**: the top edge peaks to a point over the knee
+      (`top(a) = base + h·sin(a)^6`). Make sure the boot actually reaches the
+      knee joint: knee-high on this rig means a top at ≈0.985–1.1, not 0.93
+      (that read as calf boots). Add leaf-panel appliqués (proxy surface,
+      outline, midrib, veins) on the shin and the outer side.
+    - **High-cut leotard**: bisect the hips shell along two slanted planes
+      (crotch width → high hip side) that contain FRONT, delete below, and run
+      a rolled edge along `boundary_loops` of the cut.
     - Palette: deep suit green, a brighter leaf green, a mid leaf green, dark
       veins, and a brownish-green stem. Contrast between suit and leaves is what
       makes the leaves read.
@@ -582,6 +599,9 @@ colored outfits, keep the same roughness/coat logic and vary the base color.
 | Jagged/notched stripe edges | stripes made by material index on the mesh | separate thin band objects hugging the surface |
 | Blocky, pixelated holes | faces deleted on a grid | snap the boundary to the smooth outline, add a rim tube |
 | Flat plate floating on a curved part | only the patch corners projected | subdivide in 2D, project every vertex |
+| Vine jumps across the crotch | the leotard was in the vine's projection BVH | project onto the limb only |
+| Boots read as calf boots | top below the knee joint | measure the knee overlap; set the top at the knee |
+| Vine wraps behind and misses the reference's diagonal | constant-rate spiral | shape the angle(z) curve so the long run crosses the front |
 | Vines look like thread, leaves like confetti | real-world plant scale | vine r ≈ 0.017, leaves 0.13–0.16 on an arm; pairs at nodes |
 | Leaves look tiny although their size is right | strong curl/tilt buries half of each leaf | lift ~0.01, curl ≤ 0.08, grow mostly flat; check with a close-up |
 | Dark "hole" under the chest print persists after removing rips | pit where the cleavage bridge fades out, re-dug by Laplacian smoothing | longer fade + `fill_pits`; verify with a depth-sample grid |
@@ -1429,6 +1449,30 @@ def patch(name, bvh, poly2d, lift, thick, mat, mode='cyl', center=(0, 0), subdiv
         v.co = p[0][0] + p[0][1] * lift
     ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=1.0); smooth(ob)
     return ob
+
+
+def boundary_loops(ob, pred=None):
+    """Ordered open-boundary loops of a mesh (world space) as lists of
+    (co, normal), optionally only edges whose verts satisfy pred(co). Use it to
+    run trims/piping exactly along cut edges (leg openings, tears...)."""
+    bm = bmesh.new(); bm.from_mesh(ob.data); bm.transform(ob.matrix_world); bm.normal_update()
+    edges = [e for e in bm.edges if e.is_boundary and (pred is None or (pred(e.verts[0].co) and pred(e.verts[1].co)))]
+    adj = {}
+    for e in edges:
+        a, b = e.verts
+        adj.setdefault(a.index, []).append(b.index); adj.setdefault(b.index, []).append(a.index)
+    co = {v.index: v.co.copy() for v in bm.verts}; nrm = {v.index: v.normal.copy() for v in bm.verts}
+    bm.free()
+    loops, seen = [], set()
+    for start in adj:
+        if start in seen: continue
+        loop = [start]; seen.add(start); prev, cur = None, start
+        while True:
+            nxt = [n for n in adj[cur] if n != prev and n not in seen]
+            if not nxt: break
+            prev, cur = cur, nxt[0]; loop.append(cur); seen.add(cur)
+        if len(loop) > 4: loops.append([(co[i], nrm[i]) for i in loop])
+    return loops
 
 
 def bvh_union(objs):

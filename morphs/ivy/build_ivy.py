@@ -3,11 +3,12 @@
     python build_ivy.py <rig.blend> <out_dir>
     blender -b --python build_ivy.py -- <rig.blend> <out_dir>
 
-TOP pass: strapless leaf-tipped sweetheart bodice with vine panel lines,
+Full outfit. TOP: strapless leaf-tipped sweetheart bodice with vine panel lines,
 leaf-vein cups and small leaves; opera gloves with a pointed leaf top, veins,
 finger lines and elbow creases; vines with leaves and tendrils spiralling down
 both arms and curling over her left shoulder onto the chest.
-LOWER pass (later): leotard legs, thigh vines with thorns, leaf-topped boots.
+LOWER: high-cut leotard, thorny thigh/knee vines (her right), climbing green vine
+(her left), knee-high boots with pointed leaf tops and leaf panels.
 """
 import sys, os, math, random
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +20,7 @@ import morph_toolkit as mt
 RIG, OUT = sys.argv[-2], sys.argv[-1]
 bpy.ops.wm.open_mainfile(filepath=RIG)
 random.seed(5)
-BUILD_LOWER = False
+BUILD_LOWER = True
 
 PARTS = {
     'torso': 'Robloxian2014', 'hips': 'Robloxian2013',
@@ -323,6 +324,172 @@ branch = mt.project(TB, mt.catmull([(s * 0.25, 3.5), (s * 0.24, 3.45), (s * 0.22
 add('torso', mt.vine('IV_ChestBranch', [c + n * 0.011 for c, n in branch], 0.008, M_STEM, taper=(1.0, 0.4)))
 co, n = branch[-1]
 leaf_on('IV_ChestBranchLeaf', co, n, branch[-1][0] - branch[-3][0], 'torso', length=0.08, width=0.05, side=1)
+
+# =========================================================== 5. LOWER BODY
+if BUILD_LOWER:
+    M_THORN_VINE = mt.principled('IV_Thorn_Vine', (0.10, 0.045, 0.06), 0.55, coat=0.15, coat_rough=0.3, bump=(160, 0.3))
+    M_THORN = mt.principled('IV_Thorn', (0.07, 0.03, 0.04), 0.45)
+    M_BOOT = mt.principled('IV_Boot_Green', (0.03, 0.15, 0.035), 0.36, coat=0.4, coat_rough=0.15, bump=(300, 0.05))
+    M_BOOT_LEAF = mt.principled('IV_Boot_Leaf', (0.014, 0.085, 0.022), 0.34, coat=0.4, coat_rough=0.15)
+    M_SOLE = mt.principled('IV_Sole', (0.008, 0.035, 0.01), 0.55)
+
+    # ---- high-cut leotard over the hips
+    leo = mt.world_copy(PARTS['hips'], 'IV_Leotard', level=2)
+    mt.offset_shell(leo, 0.014)
+    mt.add_folds(leo, F * 0.25 + Vector((0, 0, 2.12)), (0.3, 0.2, 0.12), (0, 0, 1), 0.003, 0.05,
+                 face_dir=tuple(F), min_dot=0.3)
+    CR_S, CR_Z, HIP_S, HIP_Z = 0.085, 1.975, 0.47, 2.32        # crotch width / hip-side height of the leg opening
+    bm = bmesh.new(); bm.from_mesh(leo.data)
+    for s in (-1, 1):
+        A = RT * (s * CR_S) + Vector((0, 0, CR_Z)); B = RT * (s * HIP_S) + Vector((0, 0, HIP_Z))
+        n = (B - A).cross(F).normalized()
+        if n.z < 0: n = -n
+        bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=A, plane_no=n)
+
+    def outside_leg_line(c):
+        s_ = abs(c.dot(RT))
+        if s_ <= CR_S: return False
+        z_line = CR_Z + (s_ - CR_S) / (HIP_S - CR_S) * (HIP_Z - CR_Z)
+        return c.z < z_line - 1e-4
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if outside_leg_line(f.calc_center_median())], context='FACES')
+    bm.to_mesh(leo.data); bm.free()
+    leo.data.materials.append(M_SUIT); mt.smooth(leo)
+    LB = mt.bvh_of(leo)
+    add('hips', leo)
+    # rolled edge along both leg openings
+    for k, lp in enumerate(mt.boundary_loops(leo, lambda c: c.z < 2.33)):
+        pts = [c + n * 0.004 for c, n in lp]
+        if len(pts) > 8:
+            add('hips', mt.tube(f'IV_LeoEdge{k}', pts + [pts[0]], 0.0075, M_SUIT_DARK))
+    # centre-front V lines continuing from the bodice down to the crotch + back seam
+    for s in (-1, 1):
+        piping(f'IV_LeoPanel{s}', [(s * 0.022, 2.3), (s * 0.015, 2.12), (s * 0.006, 2.0)], 'front', LB, group='hips', n=30)
+        piping(f'IV_LeoBack{s}', [(s * 0.2, 2.3), (s * 0.12, 2.15), (s * 0.05, 2.0)], 'back', LB, group='hips', n=30)
+
+    # ---- knee-high boots with pointed leaf tops
+    BOOT_TOP = 0.985
+    BOOT = {}
+    for side, s in SIDES:
+        sh = mt.world_copy(PARTS[f'lowerleg_{side}'], f'IV_Boot_Leg_{side}', level=3)
+        mt.offset_shell(sh, 0.026)
+        bc = mt.slice_center(sh, 0.7)
+        mt.add_folds(sh, Vector((bc[0], bc[1], 0.55)) + F * 0.05, (0.42, 0.45, 0.08), (0, 0, 1), 0.008, 0.055)
+        top = lambda a: BOOT_TOP + 0.11 * max(0.0, math.sin(math.radians(a))) ** 6   # pointed tip over the knee
+        mt.cut_by_curve(sh, bc, top, keep_above=False)
+        ft = mt.world_copy(PARTS[f'foot_{side}'], f'IV_Boot_Foot_{side}', level=2)
+        mt.offset_shell(ft, 0.024)
+        for ob in (sh, ft):
+            ob.data.materials.append(M_BOOT); mt.smooth(ob)
+        SB_, FB_ = mt.bvh_of(sh), mt.bvh_of(ft)
+        BOOT[side] = (sh, ft, SB_, FB_, bc, top)
+        add(f'lowerleg_{side}', sh); add(f'foot_{side}', ft)
+        add(f'lowerleg_{side}', mt.tube(f'IV_BootEdge_{side}', mt.ring_points([SB_], bc, 0, 0.004, nseg=200,
+                                         z_fn=lambda a, t=top: t(a) - 0.006), 0.009, M_SUIT_DARK))
+        # proxy at the boot's outer level for the leaf panels
+        px = mt.world_copy(PARTS[f'lowerleg_{side}'], '_tmp_bpx', level=2); mt.offset_shell(px, 0.034)
+        PXB = mt.bvh_of(px); bpy.data.objects.remove(px)
+        R0 = 0.24          # approx radius -> degrees per unit arc
+        dpu = math.degrees(1 / R0)
+        out_a = 0 if s > 0 else 180
+        for tag, a_c, z0, z1, wid in (('Front', 90, 0.44, BOOT_TOP + 0.12, 0.2),
+                                      ('Side', out_a, 0.5, BOOT_TOP + 0.05, 0.15)):
+            poly = []
+            NL = 30
+            for i in range(NL + 1):
+                u = i / NL; w = wid / 2 * (math.sin(math.pi * u) ** 0.8) * (1.1 - 0.3 * u)
+                poly.append((a_c + w * dpu, z0 + (z1 - z0) * u))
+            for i in range(NL - 1, 0, -1):
+                u = i / NL; w = wid / 2 * (math.sin(math.pi * u) ** 0.8) * (1.1 - 0.3 * u)
+                poly.append((a_c - w * dpu, z0 + (z1 - z0) * u))
+            add(f'lowerleg_{side}', mt.patch(f'IV_BootLeaf{tag}_{side}', PXB, poly, 0.002, 0.006, M_BOOT_LEAF, 'cyl', bc))
+            rim = mt.project(PXB, poly + [poly[0]], 'cyl', bc)
+            add(f'lowerleg_{side}', mt.tube(f'IV_BootLeafEdge{tag}_{side}', [c + n * 0.008 for c, n in rim], 0.0045,
+                                            M_SUIT_DARK))
+            mid = mt.project(PXB, [(a_c, z0 + (z1 - z0) * u) for u in [k / 16 * 0.93 for k in range(17)]], 'cyl', bc)
+            add(f'lowerleg_{side}', mt.tube(f'IV_BootLeafMidrib{tag}_{side}', [c + n * 0.0085 for c, n in mid], 0.0035,
+                                            M_SUIT_DARK, radii=[1 - 0.6 * k / 16 for k in range(17)]))
+            for k, u0 in enumerate((0.25, 0.45, 0.65)):
+                for sg in (-1, 1):
+                    w = wid / 2 * (math.sin(math.pi * (u0 + 0.12)) ** 0.8) * 0.75
+                    v2 = [(a_c + sg * w * dpu * t, z0 + (z1 - z0) * (u0 + 0.12 * t)) for t in (0, 0.5, 1)]
+                    vp = mt.project(PXB, mt.catmull(v2, 8), 'cyl', bc)
+                    add(f'lowerleg_{side}', mt.tube(f'IV_BootVein{tag}{k}{sg}_{side}', [c + n * 0.0082 for c, n in vp],
+                                                    0.0024, M_SUIT_DARK))
+        # sole
+        fcx = s * 0.262
+        outline = mt.outline_at(FB_, (fcx, 0.055), 0.03, grow=0.012)
+        add(f'foot_{side}', mt.slab(f'IV_BootSole_{side}', outline, -0.04, 0.03, M_SOLE, shrink=0.98, bevel=0.01))
+        add(f'foot_{side}', mt.seam(f'IV_BootToe_{side}', [(fcx - 0.18, 0.15), (fcx, 0.27), (fcx + 0.18, 0.15)], 'top', FB_,
+                                    (M_SUIT_DARK, M_SUIT_DARK), n=30, r=0.005, stitch=False))
+
+    # ---- leg vines
+    def leg_axis_fn(ul, ll):
+        return lambda z: mt.slice_center(ul if z > 1.03 else ll, z)
+
+    def thorny_vine(name, path, group_fn, radius=0.017):
+        """Brown-purple thorny vine split per body part, thorns + ivy leaf clusters."""
+        pts = [c for c, n in path]
+        parts = {}
+        for i, (c, n) in enumerate(path):
+            parts.setdefault(group_fn(c), []).append(i)
+        for grp, idx in parts.items():
+            seg = pts[max(idx[0] - 1, 0): idx[-1] + 2]
+            if len(seg) > 2: add(grp, mt.vine(f'{name}_{grp}', seg, radius, M_THORN_VINE, taper=(1.0, 0.75)))
+        for i in range(3, len(path) - 2, 5):
+            c, n = path[i]
+            t = (path[i + 1][0] - path[i - 1][0]).normalized(); b = n.cross(t)
+            sg = 1 if (i // 5) % 2 else -1
+            d = (n * 0.75 + b * 0.5 * sg - t * 0.25).normalized()
+            add(group_fn(c), mt.claw(f'{name}_Thorn{i}', c + d * radius * 0.8, d, t, M_THORN, length=0.03, radius=0.007,
+                                     hook=0.25))
+        for k, i in enumerate(range(8, len(path) - 4, 18)):
+            c, n = path[i]
+            along = path[i + 1][0] - path[i - 1][0]
+            for j, (sg, sc_) in enumerate(((1, 1.0), (-1, 0.8), (1, 0.65))):
+                leaf_on(f'{name}_Leaf{k}_{j}', c, n, along, group_fn(c), length=0.13 * sc_, width=0.1 * sc_, kind='ivy',
+                        side=sg * (1 if k % 2 else -1), out_angle=55 + 20 * j)
+
+    for side, s in SIDES:
+        ul = mt.world_copy(PARTS[f'upperleg_{side}'], '_tmp_ul', level=1)
+        ll = mt.world_copy(PARTS[f'lowerleg_{side}'], '_tmp_ll', level=1)
+        legB = mt.bvh_union([ul, ll])
+        sh, ft, SB_, FB_, bc, top = BOOT[side]
+        axis = leg_axis_fn(ul, ll)
+        grp = lambda c, side=side: f'upperleg_{side}' if c.z > 1.03 else f'lowerleg_{side}'
+        if s > 0:
+            # her right: thick thorny vine from the hip spiralling down the thigh, and a wrap across the knee
+            # from the outer hip, diagonally across the front of the thigh, round the back, out again
+            smp = []
+            for f in [i / 99 for i in range(100)]:
+                if f < 0.55:      # long visible diagonal across the front of the thigh
+                    g = f / 0.55; smp.append((25 + 135 * g + 8 * math.sin(g * 6), 1.98 - 0.53 * g))
+                else:             # round the back and out again above the knee
+                    g = (f - 0.55) / 0.45; smp.append((160 + 225 * g, 1.45 - 0.3 * g))
+            # thigh skin only: including the leotard lets the vine jump across the crotch
+            path = mt.surface_path([legB], axis, smp, 0.02)
+            thorny_vine('IV_ThighVine_R', path, grp)
+            smp2 = [(140 - 220 * f, 1.16 - 0.14 * f) for f in [i / 49 for i in range(50)]]
+            path2 = mt.surface_path([legB, SB_], axis, smp2, 0.018)
+            thorny_vine('IV_KneeVine_R', path2, grp, radius=0.014)
+        else:
+            # her left: thin green vine climbing the outer thigh with curls, leaves near the knee
+            smp = [(138 - 22 * math.sin(f * 7), 1.12 + 0.82 * f) for f in [i / 79 for i in range(80)]]   # front-outer thigh
+            path = mt.surface_path([legB], axis, smp, 0.012)
+            pts = [c for c, n in path]
+            add(f'upperleg_{side}', mt.vine('IV_ThighVine_L', pts, 0.01, M_STEM, taper=(1.0, 0.4)))
+            for k, i in enumerate((len(path) // 3, 2 * len(path) // 3, len(path) - 2)):
+                c, n = path[i]
+                add(f'upperleg_{side}', mt.tendril(f'IV_ThighTendril_L{k}', c, (path[i][0] - path[i - 2][0]).normalized(),
+                                                   n, M_STEM, length=0.09, radius=0.005, turns=1.8))
+            for k, i in enumerate((3, 9, 15, 24)):
+                c, n = path[i]
+                leaf_on(f'IV_ThighLeaf_L{k}', c, n, path[i + 1][0] - path[i - 1][0], grp(c), length=0.13, width=0.09,
+                        kind='ivy' if k % 2 else 'pointed', side=1 if k % 2 else -1)
+        bpy.data.objects.remove(ul); bpy.data.objects.remove(ll)
+
+    for ob in [leo] + [o for side in BOOT for o in BOOT[side][:2]]:
+        mt.add_solidify(ob, 0.008)
+        mt.add_subsurf(ob, 1)
 
 # =========================================================== 8. finishing
 for ob in [bod] + [o for side in GLOVE for o in GLOVE[side][:3]]:

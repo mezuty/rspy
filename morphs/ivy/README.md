@@ -16,6 +16,17 @@ leotard legs, thorny thigh vines, and green boots with pointed leaf tops.
   - An outer seam, finger lines, soft elbow creases, and a ring of leaves at the wrist.
 - **Vines:** thick vines spiral from each shoulder down to the wrist, over skin and glove, with paired leaves (pointed and ivy-shaped) and curly tendrils. Another vine curls over her left shoulder onto the chest, with a small branch and leaves.
 
+- **High-cut leotard:** the bodice continues into a leotard with leg openings cut high on the hips down to a narrow crotch. Rolled dark edges, center V lines continuing to the crotch, and back lines.
+- **Leg vines:**
+  - Her right: a thick brown-purple thorny vine crossing the front of the thigh diagonally from the outer hip, then wrapping around the back. Hooked thorns and clusters of ivy leaves. A second thorny vine wraps across the knee.
+  - Her left: a thin green vine climbing the front-outer thigh, with curly tendrils and leaves.
+- **Knee-high boots:**
+  - Green, each rising to a pointed leaf tip over the knee, with a rolled edge.
+  - A big darker leaf panel up the shin and a second on the outer side, each with an outline, midrib and veins.
+  - A dark sole and toe piping.
+
+The boot soles reach about 0.04 studs below the original feet.
+
 Skin color comes from the rig; a green-skin version would be a rig material
 change. The hair is a separate head piece.
 
