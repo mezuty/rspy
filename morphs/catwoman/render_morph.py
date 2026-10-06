@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from render_util import *
 bpy.ops.wm.open_mainfile(filepath=sys.argv[-3])
 out = sys.argv[-2]; views = sys.argv[-1].split(',')
-setup_render(samples=64, res=(800, 1000))
+setup_render(samples=40, res=(800, 1000))
 # hide legs/head clutter? keep everything visible like the references
 V = {
  'front': ((0, 7.5, 3.0), (0, 0, 2.95), 55),
