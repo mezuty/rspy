@@ -967,9 +967,9 @@ wr = Vector((math.cos(math.radians(WA)), math.sin(math.radians(WA)), 0))   # out
 up = Vector((0, 0, 1))
 fwd = wr.cross(up).normalized()
 if fwd.y < 0: fwd = -fwd                                                      # towards her front
-COIL_R = 0.112
+COIL_R = 0.15
 h0 = outer_hit(belt_bvhs, Vector((0, 0, 1.79)) + wr * 2, -wr)
-C = h0[0] + wr * 0.092
+C = h0[0] + wr * 0.118
 C.z = d_bottom.z - 0.035 - COIL_R * 1.08 - 0.012
 
 coil = []
@@ -981,18 +981,18 @@ for i in range(NPTS):
     # tightly bundled loops with a little hand-coiled irregularity
     rr = COIL_R * (1.0 + 0.035 * math.sin(th * 0.7 + 0.4) + 0.02 * math.sin(th * 2.3))
     p = (C + fwd * math.cos(th) * rr + up * math.sin(th) * rr * 1.1
-         + wr * (-0.034 + 0.068 * f + 0.005 * math.sin(th * 1.3))
+         + wr * (-0.042 + 0.084 * f + 0.006 * math.sin(th * 1.3))
          - up * 0.01 * f)
     coil.append(p)
 
 # handle: hangs down and forward out of the bundle
 start = coil[0]
 hdir = (fwd * 0.42 - up * 1.0 + wr * 0.12).normalized()
-H_LEN = 0.25
+H_LEN = 0.33
 ferrule = start - (coil[1] - coil[0]).normalized() * 0.004
-grip0 = ferrule + hdir * 0.03
-grip1 = grip0 + hdir * (H_LEN - 0.05)
-pom = grip1 + hdir * 0.02
+grip0 = ferrule + hdir * 0.04
+grip1 = grip0 + hdir * (H_LEN - 0.06)
+pom = grip1 + hdir * 0.026
 
 # thong: from the ferrule, through the coil, out into the fall
 fall = []
@@ -1014,9 +1014,9 @@ def thong_scale(l):
 
 
 T, N, B = parallel_frames(thong)
-PERIOD = 0.03
-STRAND_R = 0.0105
-BRAID_R = 0.0092
+STRAND_R = 0.0128
+BRAID_R = 0.0112
+PERIOD = 0.036
 for k in range(3):
     pts, radii = [], []
     for i, p in enumerate(thong):
@@ -1035,11 +1035,11 @@ _, tn, tb = parallel_frames([thong[-2], thong[-1]])
 for k in range(5):
     a = 2 * math.pi * k / 5
     sd = (tn[1] * math.cos(a) + tb[1] * math.sin(a)) * 0.35
-    pts = [tip_p + (tip_d + sd * (j / 6) ** 1.5) * 0.008 * j for j in range(7)]
-    low_add('hips', to_mesh(curve_tube(f'CW_Whip_Cracker{k}', pts, 0.0016, M_WHIP, res=1)))
+    pts = [tip_p + (tip_d + sd * (j / 6) ** 1.5) * 0.011 * j for j in range(7)]
+    low_add('hips', to_mesh(curve_tube(f'CW_Whip_Cracker{k}', pts, 0.0022, M_WHIP, res=1)))
 
 # grip: leather core with a criss-cross braided wrap, gunmetal ferrule + pommel
-low_add('hips', to_mesh(curve_tube('CW_Whip_Grip', [grip0 - hdir * 0.012, grip1 + hdir * 0.005], 0.022, M_WHIP)))
+low_add('hips', to_mesh(curve_tube('CW_Whip_Grip', [grip0 - hdir * 0.012, grip1 + hdir * 0.005], 0.029, M_WHIP)))
 _, gn, gb = parallel_frames([grip0, grip1])
 gn, gb = gn[0], gb[0]
 for k, hand in enumerate((1, -1)):
@@ -1048,24 +1048,24 @@ for k, hand in enumerate((1, -1)):
         for i in range(121):
             f = i / 120
             a = hand * 2 * math.pi * 5 * f + math.pi * j
-            pts.append(grip0.lerp(grip1, f) + (gn * math.cos(a) + gb * math.sin(a)) * 0.0232)
-        low_add('hips', to_mesh(curve_tube(f'CW_Whip_GripWrap{k}{j}', pts, 0.0038, M_WHIP, res=1)))
-low_add('hips', to_mesh(curve_tube('CW_Whip_Ferrule', [ferrule + hdir * 0.002, grip0 + hdir * 0.002], 0.026,
+            pts.append(grip0.lerp(grip1, f) + (gn * math.cos(a) + gb * math.sin(a)) * 0.0305)
+        low_add('hips', to_mesh(curve_tube(f'CW_Whip_GripWrap{k}{j}', pts, 0.0048, M_WHIP, res=1)))
+low_add('hips', to_mesh(curve_tube('CW_Whip_Ferrule', [ferrule + hdir * 0.002, grip0 + hdir * 0.002], 0.034,
                                    M_GUNMETAL)))
-for j, (aa, rr_) in enumerate(((0.0, 0.0275), (1.0, 0.0275))):
+for j, (aa, rr_) in enumerate(((0.0, 0.036), (1.0, 0.036))):
     c_ = (ferrule + hdir * 0.002).lerp(grip0 + hdir * 0.002, aa)
     ring = [c_ + (gn * math.cos(2 * math.pi * i / 24) + gb * math.sin(2 * math.pi * i / 24)) * rr_
             for i in range(25)]
     low_add('hips', to_mesh(curve_tube(f'CW_Whip_FerruleRing{j}', ring, 0.0025, M_METAL)))
-low_add('hips', to_mesh(curve_tube('CW_Whip_PommelNeck', [grip1, pom], 0.025, M_GUNMETAL)))
+low_add('hips', to_mesh(curve_tube('CW_Whip_PommelNeck', [grip1, pom], 0.032, M_GUNMETAL)))
 pm = bmesh.new()
-bmesh.ops.create_uvsphere(pm, u_segments=20, v_segments=12, radius=0.027)
+bmesh.ops.create_uvsphere(pm, u_segments=20, v_segments=12, radius=0.035)
 for v in pm.verts:
     v.co = pom + hdir * 0.004 + gn * v.co.x + gb * v.co.y + hdir * (v.co.z * 0.75)
 pob = mesh_obj('CW_Whip_Pommel', pm, M_METAL); smooth(pob)
 low_add('hips', pob)
 # lanyard loop through the pommel
-lan = [pom + hdir * 0.02 + (gn * math.cos(a) * 0.012 + hdir * (math.sin(a) * 0.022 + 0.022))
+lan = [pom + hdir * 0.03 + (gn * math.cos(a) * 0.016 + hdir * (math.sin(a) * 0.028 + 0.028))
        for a in [math.pi * 2 * i / 24 for i in range(25)]]
 low_add('hips', to_mesh(curve_tube('CW_Whip_Lanyard', lan, 0.0028, M_STRAP)))
 
@@ -1075,8 +1075,8 @@ wrap_c = bundle_top + wr * 0.0
 bm = bmesh.new(); rows = []
 for i in range(32):
     a = 2 * math.pi * i / 32
-    c_ = wrap_c + up * math.sin(a) * 0.05 + wr * math.cos(a) * 0.06
-    rows.append((bm.verts.new(c_ - fwd * 0.016), bm.verts.new(c_ + fwd * 0.016)))
+    c_ = wrap_c + up * math.sin(a) * 0.062 + wr * math.cos(a) * 0.075
+    rows.append((bm.verts.new(c_ - fwd * 0.02), bm.verts.new(c_ + fwd * 0.02)))
 for i in range(32):
     r0, r1 = rows[i], rows[(i + 1) % 32]
     bm.faces.new((r0[0], r1[0], r1[1], r0[1]))
@@ -1084,12 +1084,12 @@ hang = mesh_obj('CW_Whip_HangerLoop', bm, M_STRAP)
 add_solidify(hang, 0.006, offset=1.0); smooth(hang)
 low_add('hips', hang)
 # vertical strap up to the D-ring
-s0 = wrap_c + up * 0.05 + wr * 0.004
+s0 = wrap_c + up * 0.062 + wr * 0.004
 s1 = d_bottom + db * 0.004
 pth = [(s0.lerp(s1, i / 10), wr) for i in range(11)]
-low_add('hips', ribbon('CW_Whip_HangerStrap', pth, 0.028, 0.0, 0.006, M_STRAP))
-snap = wrap_c + wr * 0.068 + up * 0.0
-sn = bmesh.new(); bmesh.ops.create_uvsphere(sn, u_segments=16, v_segments=8, radius=0.009)
+low_add('hips', ribbon('CW_Whip_HangerStrap', pth, 0.032, 0.0, 0.007, M_STRAP))
+snap = wrap_c + wr * 0.085 + up * 0.0
+sn = bmesh.new(); bmesh.ops.create_uvsphere(sn, u_segments=16, v_segments=8, radius=0.011)
 for v in sn.verts:
     v.co = snap + Vector((v.co.x, v.co.y, v.co.z)) * 1.0
     v.co += wr * (-(v.co - snap).dot(wr) * 0.55)
