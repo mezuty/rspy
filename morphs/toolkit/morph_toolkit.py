@@ -790,6 +790,110 @@ def tendril(name, base, direction, normal, mat, length=0.05, radius=0.0025, turn
     return tube(name, pts, radius, mat, res=1, radii=[1 - 0.75 * i / 39 for i in range(40)])
 
 
+def leaf_outline2d(kind, length, width, n=24):
+    """Leaf outline as (u along the axis, v across) points, base at u=0."""
+    def hw(u):
+        if kind == 'ivy':
+            lobe = 1 + 0.45 * max(0.0, math.sin(math.pi * (u - 0.15) / 0.5)) ** 2 if u < 0.65 else 1.0
+            return width / 2 * (math.sin(math.pi * min(u, 0.999)) ** 0.55) * lobe * (1.15 - 0.45 * u)
+        if kind == 'round':
+            return width / 2 * math.sin(math.pi * u) ** 0.5
+        return width / 2 * (math.sin(math.pi * u) ** 0.75) * (1.1 - 0.35 * u)
+    us = [i / n for i in range(n + 1)]
+    return [(u * length, hw(u)) for u in us] + [(u * length, -hw(u)) for u in reversed(us[1:-1])], hw
+
+
+def surface_decal(name, bvhs, poly3d, n, lift, thick, mat, subdiv=2):
+    """Flat shape (built in the tangent plane at a point) pressed onto the
+    surface along -n: every vertex of the subdivided polygon is ray-cast, so
+    the decal hugs curves. The base of all 'flat' plant / patch details."""
+    bm = bmesh.new()
+    bm.faces.new([bm.verts.new(p) for p in poly3d])
+    bmesh.ops.triangulate(bm, faces=bm.faces[:])
+    for _ in range(subdiv):
+        bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=1, use_grid_fill=True)
+    for v in bm.verts:
+        h = outer_hit(bvhs, v.co + n * 0.15, -n)
+        if h is not None:
+            v.co = h[0] + h[1] * lift
+    ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=1.0); smooth(ob)
+    return ob
+
+
+def surface_line(name, bvhs, pts3d, n, lift, radius, mat, closed=False, radii=None):
+    """Line art pressed onto the surface (leaf outlines, veins, panel lines)."""
+    out = []
+    for p in pts3d:
+        h = outer_hit(bvhs, p + n * 0.15, -n)
+        if h is not None: out.append(h[0] + h[1] * lift)
+    if closed and out: out.append(out[0])
+    if len(out) < 2: return None
+    return tube(name, out, radius, mat, res=1, radii=radii[:len(out)] if radii else None)
+
+
+def flat_leaf(name, bvhs, co, n, axis, mat, line_mat, length=0.11, width=0.07, kind='pointed', lift=0.0022,
+              thick=0.0025, outline=True, veins=True):
+    """Cartoon-flat leaf lying on the surface: fill + dark outline + midrib +
+    side veins + a short stem. Reads like painted/illustrated foliage."""
+    n = n.normalized(); t = (axis - n * axis.dot(n)).normalized(); b = n.cross(t)
+    o2, hw = leaf_outline2d(kind, length, width)
+    poly = [co + t * u + b * v for u, v in o2]
+    out = [surface_decal(name, bvhs, poly, n, lift, thick, mat)]
+    top = lift + thick + 0.0006
+    lw = max(0.0012, width * 0.024)
+    if outline:
+        out.append(surface_line(name + '_Outline', bvhs, poly, n, top, lw, line_mat, closed=True))
+    if veins:
+        mid = [co + t * (length * 0.92 * k / 10) for k in range(11)]
+        out.append(surface_line(name + '_Midrib', bvhs, mid, n, top, lw * 0.9, line_mat,
+                                radii=[1 - 0.6 * k / 10 for k in range(11)]))
+        for k, u0 in enumerate((0.3, 0.55)):
+            for sg in (-1, 1):
+                pts = [co + t * (length * (u0 + 0.14 * f)) + b * (sg * hw(u0 + 0.14 * f) * 0.7 * f) for f in (0, 0.5, 1)]
+                out.append(surface_line(f'{name}_Vein{k}{sg}', bvhs, pts, n, top, lw * 0.7, line_mat))
+    stem = [co - t * length * 0.16, co + t * length * 0.04]
+    out.append(surface_line(name + '_Stem', bvhs, stem, n, lift + 0.002, lw * 1.3, line_mat))
+    return [o for o in out if o is not None]
+
+
+def flat_vine(name, path, width, thick, mat, taper=(1.0, 0.5), lift=0.002, bevel=0.0018):
+    """Flat low-relief vine: a tapering ribbon lying on the surface path
+    [(co, normal)] (illustrated-vine look, no tube sticking out)."""
+    bm = bmesh.new(); rows = []
+    nn = len(path)
+    for i, (co, n) in enumerate(path):
+        tdir = (path[min(i + 1, nn - 1)][0] - path[max(i - 1, 0)][0]).normalized()
+        bdir = n.cross(tdir).normalized()
+        w = width * (taper[0] + (taper[1] - taper[0]) * i / max(1, nn - 1))
+        c = co + n * lift
+        rows.append((bm.verts.new(c - bdir * w / 2), bm.verts.new(c + bdir * w / 2)))
+    for r0, r1 in zip(rows, rows[1:]):
+        bm.faces.new((r0[0], r0[1], r1[1], r1[0]))
+    ob = mesh_obj(name, bm, mat); add_solidify(ob, thick, offset=1.0)
+    if bevel: add_bevel(ob, bevel, 2)
+    smooth(ob)
+    return ob
+
+
+def flat_tendril(name, bvhs, co, n, direction, mat, length=0.06, radius=0.003, turns=1.7, lift=0.003):
+    """Curly tendril drawn flat on the surface (a tightening spiral)."""
+    n = n.normalized(); d = (direction - n * direction.dot(n)).normalized(); b = n.cross(d)
+    pts = []
+    for i in range(48):
+        f = i / 47
+        ang = 2 * math.pi * turns * f
+        r = length * 0.32 * (1 - f) ** 1.1
+        pts.append(co + d * (length * 0.55 * f) + (d * math.sin(ang) - b * math.cos(ang)) * r + b * length * 0.32)
+    return surface_line(name, bvhs, pts, n, lift, radius, mat, radii=[1 - 0.7 * i / 47 for i in range(48)])
+
+
+def flat_thorn(name, bvhs, co, n, along, side, mat, length=0.026, base=0.016, lift=0.0025, thick=0.003):
+    """Flat triangular thorn pointing sideways off a flat vine."""
+    n = n.normalized(); t = (along - n * along.dot(n)).normalized(); b = n.cross(t) * side
+    tri = [co - t * base / 2, co + t * base / 2, co + b * length + t * base * 0.35]
+    return surface_decal(name, bvhs, tri, n, lift, thick, mat, subdiv=1)
+
+
 def surface_path(bvhs, center_fn, samples, lift):
     """Path given as (angle_deg, z) pairs wrapped radially onto the outermost
     of several surfaces; center_fn(z) -> (x, y) axis of the limb/torso.
