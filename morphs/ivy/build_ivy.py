@@ -62,8 +62,9 @@ def leaf_on(name, co, n, along, group, bvhs, length=0.11, width=0.07, kind='poin
     add(group, mt.flat_leaf(name, bvhs, co, n, axis, m, M_VEIN, length=length, width=width, kind=kind))
 
 
-def flat_vine_split(name, path, width, mat, group_fn, taper=(1.0, 0.5)):
-    """Flat vine split per body part so each segment follows its own bone."""
+def vine_split(name, path, radius, mat, group_fn, taper=(1.0, 0.5)):
+    """Round 3D vine (sitting on the surface) split per body part so each
+    segment follows its own bone. Leaves stay flat; vines are tubes."""
     parts = {}
     for i, (c, n) in enumerate(path):
         parts.setdefault(group_fn(c), []).append(i)
@@ -74,7 +75,8 @@ def flat_vine_split(name, path, width, mat, group_fn, taper=(1.0, 0.5)):
         if len(seg) > 2:
             t0 = taper[0] + (taper[1] - taper[0]) * lo / max(1, nn - 1)
             t1 = taper[0] + (taper[1] - taper[0]) * (hi - 1) / max(1, nn - 1)
-            add(grp, mt.flat_vine(f'{name}_{grp}', seg, width, 0.0045, mat, taper=(t0, t1)))
+            pts = [c + n * radius * 0.85 for c, n in seg]
+            add(grp, mt.vine(f'{name}_{grp}', pts, radius, mat, taper=(t0, t1)))
 
 
 # =========================================================== 1. BODICE (strapless, leaf-tipped sweetheart)
@@ -243,7 +245,7 @@ for side, s in SIDES:
     ARM = [skin_bvh, ub, lb, hb]
     path = mt.surface_path(ARM, axis, samples, 0.0)
     agrp = lambda c, side=side: f'upperarm_{side}' if c.z > 2.8 else f'lowerarm_{side}'
-    flat_vine_split(f'IV_ArmVine_{side}', path, 0.024, M_STEM, agrp, taper=(1.0, 0.45))
+    vine_split(f'IV_ArmVine_{side}', path, 0.015, M_STEM, agrp, taper=(1.0, 0.45))
     # leaves alternating along the vine + a few tendrils
     for k, i in enumerate(range(8, len(path) - 4, 16)):
         co, n = path[i]
@@ -255,7 +257,8 @@ for side, s in SIDES:
                     kind='ivy' if (k + j) % 3 == 0 else 'pointed', side=sg * (1 if k % 2 else -1),
                     out_angle=60 + 15 * j)
         if k % 4 == 2:
-            add(grp, mt.flat_tendril(f'IV_ArmTendril_{side}{k}', ARM, co, n, along, M_STEM, length=0.07, radius=0.0042))
+            add(grp, mt.tendril(f'IV_ArmTendril_{side}{k}', co + n * 0.012, (along.normalized() * 0.4 + n * 0.5).normalized(),
+                                n, M_STEM, length=0.07, radius=0.0042))
     for o in tmp_objs: bpy.data.objects.remove(o)
 
 # vine curling over her left shoulder onto the chest (skin), ending above the left cup tip
@@ -267,18 +270,18 @@ top_part = mt.project(TB, mt.catmull([(s * 0.36, -0.15), (s * 0.35, 0.0), (s * 0
 front_part = mt.project(TB, mt.catmull([(s * 0.33, 3.6), (s * 0.3, 3.53), (s * 0.22, 3.5), (s * 0.15, 3.52),
                                         (s * 0.1, 3.57)], 40), 'front')
 chest = back_part + top_part + front_part
-add('torso', mt.flat_vine('IV_ChestVine', chest, 0.022, 0.0045, M_STEM, taper=(1.0, 0.4)))
+add('torso', mt.vine('IV_ChestVine', [c + n * 0.012 for c, n in chest], 0.014, M_STEM, taper=(1.0, 0.4)))
 for k, i in enumerate(range(6, len(chest) - 3, 12)):
     co, n = chest[i]
     along = chest[i + 1][0] - chest[i - 1][0]
     leaf_on(f'IV_ChestLeaf{k}', co, n, along, 'torso', [TB], length=0.11, width=0.072,
             kind='ivy' if k % 2 == 0 else 'pointed', side=1 if k % 2 else -1, out_angle=60)
 end_co, end_n = chest[-1]
-add('torso', mt.flat_tendril('IV_ChestTendril', [TB], end_co, end_n, chest[-1][0] - chest[-3][0], M_STEM,
-                             length=0.08, radius=0.0045))
+add('torso', mt.tendril('IV_ChestTendril', end_co + end_n * 0.008, (chest[-1][0] - chest[-3][0]).normalized(), end_n,
+                        M_STEM, length=0.08, radius=0.0045))
 # a second, smaller branch dropping towards the left cup tip
 branch = mt.project(TB, mt.catmull([(s * 0.25, 3.5), (s * 0.24, 3.45), (s * 0.22, 3.43)], 14), 'front')
-add('torso', mt.flat_vine('IV_ChestBranch', branch, 0.014, 0.004, M_STEM, taper=(1.0, 0.4)))
+add('torso', mt.vine('IV_ChestBranch', [c + n * 0.007 for c, n in branch], 0.008, M_STEM, taper=(1.0, 0.4)))
 co, n = branch[-1]
 leaf_on('IV_ChestBranchLeaf', co, n, branch[-1][0] - branch[-3][0], 'torso', [TB], length=0.08, width=0.052, side=1)
 
@@ -370,17 +373,18 @@ if BUILD_LOWER:
     def leg_axis_fn(ul, ll):
         return lambda z: mt.slice_center(ul if z > 1.03 else ll, z)
 
-    def thorny_vine(name, path, group_fn, bvhs, width=0.03):
-        """Flat brown-purple thorny vine (per body part), flat thorns on both
-        edges, clusters of flat ivy leaves."""
-        flat_vine_split(name, path, width, M_THORN_VINE, group_fn, taper=(1.0, 0.7))
-        for i in range(3, len(path) - 2, 4):
+    def thorny_vine(name, path, group_fn, bvhs, radius=0.016):
+        """Round brown-purple thorny vine (per body part) with hooked thorns,
+        and clusters of flat ivy leaves."""
+        vine_split(name, path, radius, M_THORN_VINE, group_fn, taper=(1.0, 0.75))
+        for i in range(3, len(path) - 2, 5):
             c, n = path[i]
-            along = path[i + 1][0] - path[i - 1][0]
-            sg = 1 if (i // 4) % 2 else -1
-            p_edge = c + n.cross(along.normalized()) * sg * width * 0.42
-            add(group_fn(c), mt.flat_thorn(f'{name}_Thorn{i}', bvhs, p_edge, n, along, sg, M_THORN, length=0.026,
-                                           base=0.016))
+            t = (path[i + 1][0] - path[i - 1][0]).normalized(); b = n.cross(t)
+            sg = 1 if (i // 5) % 2 else -1
+            d = (n * 0.75 + b * 0.5 * sg - t * 0.25).normalized()
+            ctr = c + n * radius * 0.85
+            add(group_fn(c), mt.claw(f'{name}_Thorn{i}', ctr + d * radius * 0.8, d, t, M_THORN, length=0.03,
+                                     radius=0.007, hook=0.25))
         for k, i in enumerate(range(8, len(path) - 4, 18)):
             c, n = path[i]
             along = path[i + 1][0] - path[i - 1][0]
@@ -409,16 +413,17 @@ if BUILD_LOWER:
             thorny_vine('IV_ThighVine_R', path, grp, [legB])
             smp2 = [(140 - 220 * f, 1.16 - 0.14 * f) for f in [i / 49 for i in range(50)]]
             path2 = mt.surface_path([legB, SB_], axis, smp2, 0.0)
-            thorny_vine('IV_KneeVine_R', path2, grp, [legB, SB_], width=0.024)
+            thorny_vine('IV_KneeVine_R', path2, grp, [legB, SB_], radius=0.013)
         else:
             # her left: thin green vine climbing the outer thigh with curls, leaves near the knee
             smp = [(138 - 22 * math.sin(f * 7), 1.12 + 0.82 * f) for f in [i / 79 for i in range(80)]]   # front-outer thigh
             path = mt.surface_path([legB], axis, smp, 0.0)
-            flat_vine_split('IV_ThighVine_L', path, 0.016, M_STEM, grp, taper=(1.0, 0.45))
+            vine_split('IV_ThighVine_L', path, 0.0095, M_STEM, grp, taper=(1.0, 0.45))
             for k, i in enumerate((len(path) // 3, 2 * len(path) // 3, len(path) - 2)):
                 c, n = path[i]
-                add(f'upperleg_{side}', mt.flat_tendril(f'IV_ThighTendril_L{k}', [legB], c, n, path[i][0] - path[i - 2][0],
-                                                        M_STEM, length=0.08, radius=0.0042, turns=1.8))
+                add(f'upperleg_{side}', mt.tendril(f'IV_ThighTendril_L{k}', c + n * 0.008,
+                                                   (path[i][0] - path[i - 2][0]).normalized(), n, M_STEM,
+                                                   length=0.08, radius=0.0045, turns=1.8))
             for k, i in enumerate((3, 9, 15, 24)):
                 c, n = path[i]
                 leaf_on(f'IV_ThighLeaf_L{k}', c, n, path[i + 1][0] - path[i - 1][0], grp(c), [legB], length=0.11, width=0.075,

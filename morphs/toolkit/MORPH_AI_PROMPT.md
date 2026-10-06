@@ -470,6 +470,10 @@ Design control points in 2D, smooth with `catmull()`, project, and
     / `surface_line`. 3D leaves sticking out looked "iffy" next to a flat
     reference. Use the 3D builders below only for sculptural or realistic
     foliage.
+    - **Mix per element, and ask if unsure.** The approved Poison Ivy uses
+      **flat leaves** but **round 3D vines, curly 3D tendrils and hooked 3D
+      thorns**. Flattening the vines too was rejected ("I only wanted the
+      leaves flat"). Change only the element the user named.
     - **Big appliqué shapes over a garment (giant leaf cups, leaf panels on
       boots) read as choppy.** Prefer the garment's own silhouette (a cut
       edge with pointed tips) plus thin line-art (outline/midrib piping) the
